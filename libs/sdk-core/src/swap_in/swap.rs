@@ -1,13 +1,13 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::binding::parse_invoice;
 use crate::chain::{get_utxos, AddressUtxos, ChainService, MempoolSpace, OnchainTx};
+use crate::error::SdkError;
 use crate::grpc::{AddFundInitRequest, GetSwapPaymentRequest};
 use crate::swap_in::error::SwapError;
 use crate::{
-    OpeningFeeParams, PrepareRefundRequest, PrepareRefundResponse, ReceivePaymentRequest,
-    RefundRequest, RefundResponse, SWAP_PAYMENT_FEE_EXPIRY_SECONDS,
+    invoice, LNInvoice, OpeningFeeParams, PrepareRefundRequest, PrepareRefundResponse,
+    ReceivePaymentRequest, RefundRequest, RefundResponse, SWAP_PAYMENT_FEE_EXPIRY_SECONDS,
 };
 use anyhow::{anyhow, Result};
 use bitcoin::blockdata::constants::WITNESS_SCALE_FACTOR;
@@ -77,6 +77,10 @@ pub(crate) struct BTCReceiveSwap {
     persister: Arc<crate::persist::db::SqliteStorage>,
     chain_service: Arc<dyn ChainService>,
     payment_receiver: Arc<dyn Receiver>,
+}
+
+pub fn parse_invoice(invoice: String) -> Result<LNInvoice> {
+    invoice::parse_invoice(&invoice).map_err(|e| anyhow::Error::new::<SdkError>(e.into()))
 }
 
 impl BTCReceiveSwap {

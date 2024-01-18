@@ -155,7 +155,6 @@
 //!
 //! Join this [telegram group](https://t.me/breezsdk).
 
-mod bridge_generated; /* AUTO INJECTED BY flutter_rust_bridge. This line may not be accurate, and you can change it according to your needs. */
 #[macro_use]
 extern crate log;
 
@@ -163,7 +162,6 @@ extern crate log;
 #[cfg(test)]
 mod test_utils; // flutter_rust_bridge_codegen: has to be defined before breez_services
 mod backup;
-pub mod binding;
 mod breez_services;
 mod chain;
 mod crypt;
