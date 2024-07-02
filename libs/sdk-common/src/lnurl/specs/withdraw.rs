@@ -1,3 +1,4 @@
+use log::warn;
 use std::str::FromStr;
 
 use crate::prelude::*;
@@ -33,9 +34,17 @@ pub async fn validate_lnurl_withdraw(
 
     // Send invoice to the LNURL-w endpoint via the callback
     let callback_url = build_withdraw_callback_url(&req_data, &invoice)?;
-    let callback_res: LnUrlCallbackStatus = get_parse_and_log_response(&callback_url, false)
+    let callback_res: LnUrlCallbackStatus = match get_parse_and_log_response(&callback_url, false)
         .await
-        .map_err(|e| LnUrlError::ServiceConnectivity(e.to_string()))?;
+        .map_err(|e| LnUrlError::ServiceConnectivity(e.to_string()))
+    {
+        Ok(s) => s,
+        Err(e) if e.to_string().contains("operation timed out") => {
+            warn!("Tolerating 'operation timed out' on submitting invoice to LNURL-w");
+            LnUrlCallbackStatus::Ok
+        }
+        Err(e) => return Err(e),
+    };
     let withdraw_status = match callback_res {
         LnUrlCallbackStatus::Ok => LnUrlWithdrawResult::Ok {
             data: LnUrlWithdrawSuccessData { invoice },
