@@ -509,6 +509,7 @@ impl Config {
 #[derive(Clone)]
 pub enum NodeConfig {
     Greenlight { config: GreenlightNodeConfig },
+    Ldk,
 }
 
 #[derive(Clone, Serialize)]

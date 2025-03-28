@@ -948,6 +948,7 @@ impl Wire2Api<NodeConfig> for wire_NodeConfig {
                     config: ans.config.wire2api(),
                 }
             },
+            1 => NodeConfig::Ldk,
             _ => unreachable!(),
         }
     }
@@ -1476,6 +1477,7 @@ pub struct wire_NodeConfig {
 #[repr(C)]
 pub union NodeConfigKind {
     Greenlight: *mut wire_NodeConfig_Greenlight,
+    Ldk: *mut wire_NodeConfig_Ldk,
 }
 
 #[repr(C)]
@@ -1483,6 +1485,10 @@ pub union NodeConfigKind {
 pub struct wire_NodeConfig_Greenlight {
     config: *mut wire_GreenlightNodeConfig,
 }
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_NodeConfig_Ldk {}
 
 #[repr(C)]
 #[derive(Clone)]

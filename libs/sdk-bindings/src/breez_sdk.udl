@@ -141,6 +141,7 @@ dictionary GreenlightNodeConfig {
 [Enum]
 interface NodeConfig {
     Greenlight(GreenlightNodeConfig config);
+	Ldk();
 };
 
 dictionary Config {

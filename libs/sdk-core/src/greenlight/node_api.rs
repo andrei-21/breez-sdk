@@ -119,6 +119,9 @@ impl Greenlight {
 
         let register_credentials = match config.node_config.clone() {
             NodeConfig::Greenlight { config } => config,
+            NodeConfig::Ldk => {
+                panic!("Misconfiguration: attempt to build Greenlight node with LDK config")
+            }
         };
 
         // Query for the existing credentials

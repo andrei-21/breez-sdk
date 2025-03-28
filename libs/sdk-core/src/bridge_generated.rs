@@ -2002,6 +2002,7 @@ impl support::IntoDart for NodeConfig {
     fn into_dart(self) -> support::DartAbi {
         match self {
             Self::Greenlight { config } => vec![0.into_dart(), config.into_into_dart().into_dart()],
+            Self::Ldk => vec![1.into_dart()],
         }
         .into_dart()
     }
