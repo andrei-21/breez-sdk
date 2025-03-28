@@ -33,6 +33,7 @@ use crate::error::{
     RedeemOnchainResult, SdkError, SdkResult, SendOnchainError, SendPaymentError,
 };
 use crate::greenlight::{GLBackupTransport, Greenlight};
+use crate::ldk::{Ldk, VssBackupTransport};
 use crate::lnurl::auth::SdkLnurlAuthSigner;
 use crate::lnurl::pay::*;
 use crate::lsp::LspInformation;
@@ -2376,17 +2377,24 @@ impl BreezServicesBuilder {
         let mut node_api = self.node_api.clone();
         let mut backup_transport = self.backup_transport.clone();
         if node_api.is_none() {
-            let greenlight = Greenlight::connect(
-                self.config.clone(),
-                self.seed.clone().unwrap(),
-                restore_only,
-                persister.clone(),
-            )
-            .await?;
-            let gl_arc = Arc::new(greenlight);
-            node_api = Some(gl_arc.clone());
-            if backup_transport.is_none() {
-                backup_transport = Some(Arc::new(GLBackupTransport { inner: gl_arc }));
+            let prototype = true;
+            if prototype {
+                let ldk = Arc::new(Ldk::new());
+                node_api = Some(ldk);
+                backup_transport = Some(Arc::new(VssBackupTransport {}));
+            } else {
+                let greenlight = Greenlight::connect(
+                    self.config.clone(),
+                    self.seed.clone().unwrap(),
+                    restore_only,
+                    persister.clone(),
+                )
+                .await?;
+                let gl_arc = Arc::new(greenlight);
+                node_api = Some(gl_arc.clone());
+                if backup_transport.is_none() {
+                    backup_transport = Some(Arc::new(GLBackupTransport { inner: gl_arc }));
+                }
             }
         }
 

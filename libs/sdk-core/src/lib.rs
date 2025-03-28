@@ -174,6 +174,7 @@ mod greenlight;
 #[rustfmt::skip]
 pub mod lnurl;
 mod buy;
+mod ldk;
 mod lsp;
 mod lsps0;
 mod lsps2;
