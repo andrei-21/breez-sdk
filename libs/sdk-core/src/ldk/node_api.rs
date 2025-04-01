@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use futures::Stream;
 
-use ldk_node::{Builder, Node};
+use ldk_node::{Builder, Node, PendingSweepBalance};
 use sdk_common::prelude::*;
 use serde_json::Value;
 use tokio::sync::{mpsc, watch};
@@ -82,17 +82,55 @@ impl NodeAPI for Ldk {
         todo!()
     }
 
-    // implement pull changes from greenlight
     async fn pull_changed(
         &self,
         sync_state: Option<Value>,
         match_local_balance: bool,
     ) -> NodeResult<SyncResponse> {
+        const MAX_PAYMENT_AMOUNT_MSAT: u64 = 4294967000;
+
+        let balances = self.node.list_balances();
+        let pending_onchain_balance_sats: u64 = balances
+            .pending_balances_from_channel_closures
+            .into_iter()
+            .map(get_balance)
+            .sum();
+        let connected_peers = self
+            .node
+            .list_peers()
+            .iter()
+            .filter(|p| p.is_connected)
+            .map(|p| p.node_id.to_string())
+            .collect();
+
+        let channels = self
+            .node
+            .list_channels()
+            .into_iter()
+            .flat_map(map_channel)
+            .collect();
+
+        let node_state = NodeState {
+            id: self.node.node_id().to_string(),
+            block_height: self.node.status().current_best_block.height,
+            channels_balance_msat: balances.total_lightning_balance_sats * 1000,
+            onchain_balance_msat: balances.total_onchain_balance_sats * 1000,
+            pending_onchain_balance_msat: pending_onchain_balance_sats * 1000,
+            utxos: Vec::new(),
+            max_payable_msat: 0,
+            max_receivable_msat: 0,
+            max_single_payment_amount_msat: MAX_PAYMENT_AMOUNT_MSAT,
+            //max_chan_reserve_msats: channels_balance - min(max_payable, channels_balance),
+            max_chan_reserve_msats: 0,
+            connected_peers,
+            max_receivable_single_payment_amount_msat: 0,
+            total_inbound_liquidity_msats: 0,
+        };
         let response = SyncResponse {
             sync_state: Value::Null,
-            node_state: NodeState::default(),
+            node_state,
             payments: Vec::new(),
-            channels: Vec::new(),
+            channels,
         };
         Ok(response)
     }
@@ -240,4 +278,78 @@ impl NodeAPI for Ldk {
     async fn get_open_peers(&self) -> NodeResult<HashSet<Vec<u8>>> {
         todo!()
     }
+}
+
+fn get_balance(balance: PendingSweepBalance) -> u64 {
+    match balance {
+        PendingSweepBalance::PendingBroadcast {
+            channel_id: _,
+            amount_satoshis,
+        } => amount_satoshis,
+        PendingSweepBalance::BroadcastAwaitingConfirmation {
+            channel_id: _,
+            latest_broadcast_height: _,
+            latest_spending_txid: _,
+            amount_satoshis,
+        } => amount_satoshis,
+        PendingSweepBalance::AwaitingThresholdConfirmations {
+            channel_id: _,
+            latest_spending_txid: _,
+            confirmation_hash: _,
+            confirmation_height: _,
+            amount_satoshis,
+        } => amount_satoshis,
+    }
+}
+
+fn map_channel(channel: ldk_node::ChannelDetails) -> Option<crate::models::Channel> {
+    let funding_txo = channel.funding_txo?;
+    let funding_txid = funding_txo.txid.to_string();
+    let funding_outnum = Some(funding_txo.vout);
+
+    let short_channel_id = channel.short_channel_id.map(format_scid);
+
+    let state = match (channel.is_channel_ready, channel.is_usable) {
+        // TODO: It might mean that ChannelState::Closed?
+        (false, _) => ChannelState::PendingOpen,
+        // TODO: If the peer is connected it might mean that ChannelState::PendingClose.
+        (true, false) => ChannelState::Opened,
+        (true, true) => ChannelState::Opened,
+    };
+
+    let spendable_msat = channel.outbound_capacity_msat;
+    // TODO: Not sure about this math.
+    let local_balance_msat =
+        spendable_msat + channel.unspendable_punishment_reserve.unwrap_or_default();
+    let receivable_msat = channel.inbound_capacity_msat;
+
+    // TODO: Here we get only open channels I guess.
+    let closed_at: Option<u64> = None;
+    let closing_txid: Option<String> = None;
+
+    let alias_local = channel.outbound_scid_alias.map(format_scid);
+    let alias_remote = channel.inbound_scid_alias.map(format_scid);
+
+    // TODO: Convert HTLCs.
+    let htlcs = Vec::new();
+
+    Some(crate::models::Channel {
+        funding_txid,
+        short_channel_id,
+        state,
+        spendable_msat,
+        local_balance_msat,
+        receivable_msat,
+        closed_at,
+        funding_outnum,
+        alias_local,
+        alias_remote,
+        closing_txid,
+        htlcs,
+    })
+}
+
+fn format_scid(id: u64) -> String {
+    // TODO: It should be in this format 2531830x10x1 I guess.
+    id.to_string()
 }
