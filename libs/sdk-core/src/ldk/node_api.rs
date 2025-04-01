@@ -5,7 +5,11 @@ use std::sync::Arc;
 use anyhow::Result;
 use futures::Stream;
 
+use ldk_node::bitcoin::secp256k1::PublicKey;
+use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::{Builder, Node, PendingSweepBalance};
+
+use core::str::FromStr;
 use sdk_common::prelude::*;
 use serde_json::Value;
 use tokio::sync::{mpsc, watch};
@@ -13,7 +17,7 @@ use tokio::sync::{mpsc, watch};
 use crate::bitcoin::secp256k1::Secp256k1;
 use crate::bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
 use crate::lightning_invoice::RawBolt11Invoice;
-use crate::node_api::{CreateInvoiceRequest, FetchBolt11Result, NodeAPI, NodeResult};
+use crate::node_api::{CreateInvoiceRequest, FetchBolt11Result, NodeAPI, NodeError, NodeResult};
 use crate::{models::*, LspInformation};
 use crate::{PrepareRedeemOnchainFundsRequest, PrepareRedeemOnchainFundsResponse};
 
@@ -31,11 +35,9 @@ impl Ldk {
         let seed = bytes;
         builder.set_entropy_seed_bytes(seed.clone());
 
-        builder.set_network(ldk_node::bitcoin::Network::Testnet);
-        builder.set_chain_source_esplora("https://blockstream.info/testnet/api".to_string(), None);
-        builder.set_gossip_source_rgs(
-            "https://rapidsync.lightningdevkit.org/testnet/snapshot".to_string(),
-        );
+        builder.set_network(ldk_node::bitcoin::Network::Bitcoin);
+        builder.set_chain_source_esplora("https://blockstream.info/api".to_string(), None);
+        builder.set_gossip_source_rgs("https://rapidsync.lightningdevkit.org/snapshot".to_string());
         let node = Arc::new(builder.build().unwrap());
         Self { seed, node }
     }
@@ -188,7 +190,12 @@ impl NodeAPI for Ldk {
     }
 
     async fn connect_peer(&self, id: String, addr: String) -> NodeResult<()> {
-        todo!()
+        let node_id = PublicKey::from_str(&id).unwrap();
+        let address = SocketAddress::from_str(&addr).unwrap();
+        let persist = false;
+        self.node
+            .connect(node_id, address, persist)
+            .map_err(to_node_error)
     }
 
     async fn sign_message(&self, message: &str) -> NodeResult<String> {
@@ -248,7 +255,7 @@ impl NodeAPI for Ldk {
     }
 
     async fn derive_bip32_key(&self, path: Vec<ChildNumber>) -> NodeResult<ExtendedPrivKey> {
-        let network = sdk_common::prelude::Network::Testnet;
+        let network = sdk_common::prelude::Network::Bitcoin;
         Ok(ExtendedPrivKey::new_master(network.into(), &self.seed)?
             .derive_priv(&Secp256k1::new(), &path)?)
     }
@@ -352,4 +359,8 @@ fn map_channel(channel: ldk_node::ChannelDetails) -> Option<crate::models::Chann
 fn format_scid(id: u64) -> String {
     // TODO: It should be in this format 2531830x10x1 I guess.
     id.to_string()
+}
+
+fn to_node_error(err: ldk_node::NodeError) -> NodeError {
+    NodeError::generic(&err.to_string())
 }
