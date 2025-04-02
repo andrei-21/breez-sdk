@@ -98,6 +98,7 @@ impl From<NodeError> for LnUrlAuthError {
     }
 }
 
+#[derive(Debug)]
 pub struct CreateInvoiceRequest {
     pub amount_msat: u64,
     pub description: String,

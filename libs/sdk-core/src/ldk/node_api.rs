@@ -1,12 +1,14 @@
 use std::collections::HashSet;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use anyhow::Result;
 use futures::Stream;
 
 use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::lightning::ln::msgs::SocketAddress;
+use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
 use ldk_node::{Builder, Node, PendingSweepBalance};
 
 use core::str::FromStr;
@@ -14,8 +16,11 @@ use sdk_common::prelude::*;
 use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 
+use crate::bitcoin::bech32::ToBase32;
+use crate::bitcoin::secp256k1::ecdsa::RecoverableSignature;
 use crate::bitcoin::secp256k1::Secp256k1;
 use crate::bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
+use crate::lightning::sign::{KeysManager, NodeSigner, Recipient};
 use crate::lightning_invoice::RawBolt11Invoice;
 use crate::node_api::{CreateInvoiceRequest, FetchBolt11Result, NodeAPI, NodeError, NodeResult};
 use crate::{models::*, LspInformation};
@@ -77,7 +82,20 @@ impl NodeAPI for Ldk {
     }
 
     async fn create_invoice(&self, request: CreateInvoiceRequest) -> NodeResult<String> {
-        todo!()
+        debug!("create_invoice: {request:?}");
+        let description =
+            Bolt11InvoiceDescription::Direct(Description::new(request.description).unwrap());
+        let invoice = self
+            .node
+            .bolt11_payment()
+            .receive(
+                request.amount_msat,
+                &description,
+                request.expiry.unwrap_or(3600),
+            )
+            .map_err(to_node_error)?
+            .to_string();
+        Ok(invoice)
     }
 
     async fn fetch_bolt11(&self, payment_hash: Vec<u8>) -> NodeResult<Option<FetchBolt11Result>> {
@@ -212,7 +230,26 @@ impl NodeAPI for Ldk {
     }
 
     async fn sign_invoice(&self, invoice: RawBolt11Invoice) -> NodeResult<String> {
-        todo!()
+        let network = self.node.config().network;
+        let xprv = ldk_node::bitcoin::bip32::Xpriv::new_master(network, &self.seed).unwrap();
+        let ldk_seed_bytes: [u8; 32] = xprv.private_key.secret_bytes();
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        let key_manager = KeysManager::new(&ldk_seed_bytes, now.as_secs(), now.subsec_nanos());
+        let signature = key_manager
+            .sign_invoice(
+                &invoice.hrp.to_string().as_bytes(),
+                &invoice.data.to_base32(),
+                Recipient::Node,
+            )
+            .unwrap();
+        let signed = invoice
+            .sign(|_| Ok::<RecoverableSignature, ()>(signature))
+            .unwrap()
+            .to_string();
+        debug!("sign_invoice: {signed:?}");
+        Ok(signed)
     }
 
     async fn close_peer_channels(&self, node_id: String) -> NodeResult<Vec<String>> {
