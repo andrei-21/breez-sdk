@@ -9,12 +9,12 @@ use futures::Stream;
 use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
-use ldk_node::{Builder, Node, PendingSweepBalance};
+use ldk_node::{Builder, Event, Node, PendingSweepBalance};
 
 use core::str::FromStr;
 use sdk_common::prelude::*;
 use serde_json::Value;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, watch, Mutex};
 
 use crate::bitcoin::bech32::ToBase32;
 use crate::bitcoin::secp256k1::ecdsa::RecoverableSignature;
@@ -29,6 +29,7 @@ use crate::{PrepareRedeemOnchainFundsRequest, PrepareRedeemOnchainFundsResponse}
 pub(crate) struct Ldk {
     seed: [u8; 64],
     node: Arc<Node>,
+    invoice_stream: Mutex<Option<mpsc::Receiver<Payment>>>,
 }
 
 impl Ldk {
@@ -44,7 +45,64 @@ impl Ldk {
         builder.set_chain_source_esplora("https://blockstream.info/api".to_string(), None);
         builder.set_gossip_source_rgs("https://rapidsync.lightningdevkit.org/snapshot".to_string());
         let node = Arc::new(builder.build().unwrap());
-        Self { seed, node }
+        Self {
+            seed,
+            node,
+            invoice_stream: Mutex::default(),
+        }
+    }
+}
+
+async fn stream_invoices(node: Arc<Node>, tx: mpsc::Sender<crate::models::Payment>) {
+    loop {
+        let event = node.next_event_async().await;
+        info!("Event: {event:?}");
+        match event {
+            Event::PaymentReceived {
+                payment_id: _,
+                payment_hash,
+                amount_msat,
+                custom_records: _,
+            } => {
+                let payment_hash = hex::encode(payment_hash.0);
+                let payment = crate::models::Payment {
+                    id: payment_hash.clone(),
+                    payment_type: crate::models::PaymentType::Received,
+                    payment_time: 0,
+                    amount_msat,
+                    fee_msat: 0,
+                    status: crate::models::PaymentStatus::Complete,
+                    error: None,
+                    description: None,
+                    details: crate::models::PaymentDetails::Ln {
+                        data: crate::models::LnPaymentDetails {
+                            payment_hash,
+                            label: String::new(),
+                            destination_pubkey: node.node_id().to_string(),
+                            payment_preimage: String::new(),
+                            keysend: false,
+                            bolt11: String::new(),
+                            lnurl_success_action: None, // For received payments, this is None
+                            lnurl_pay_domain: None,     // For received payments, this is None
+                            lnurl_pay_comment: None,    // For received payments, this is None
+                            lnurl_metadata: None,       // For received payments, this is None
+                            ln_address: None,
+                            lnurl_withdraw_endpoint: None,
+                            swap_info: None,
+                            reverse_swap_info: None,
+                            pending_expiration_block: None,
+                            open_channel_bolt11: None,
+                        },
+                    },
+                    metadata: None,
+                };
+                let _ = tx.send(payment).await;
+            }
+            _ => (),
+        }
+        if let Err(e) = node.event_handled() {
+            error!("Failed to report that event was handled: {e}");
+        }
     }
 }
 
@@ -55,17 +113,25 @@ impl NodeAPI for Ldk {
     async fn start_signer(&self, mut shutdown: mpsc::Receiver<()>) {
         debug!("Starting node");
         self.node.start().unwrap();
-        debug!("Node started");
+        debug!("LDK Node started");
+
+        let node = Arc::clone(&self.node);
+        let (tx, rx) = mpsc::channel(10);
+        tokio::spawn(async move { stream_invoices(node, tx).await });
+        self.invoice_stream.lock().await.replace(rx);
+        debug!("Event handling started");
+
         let node = Arc::clone(&self.node);
         let _ = tokio::spawn(async move {
             let _ = shutdown.recv().await;
-            debug!("Received shutdown signal");
+            debug!("Received shutdown signal, stopping node");
             if let Err(e) = node.stop() {
                 error!("{e}");
             }
             debug!("Node stopped");
         })
         .await;
+        debug!("Node started");
     }
 
     /// Keeps background tasks running.
@@ -257,8 +323,11 @@ impl NodeAPI for Ldk {
     }
 
     async fn stream_incoming_payments(&self) -> NodeResult<mpsc::Receiver<crate::models::Payment>> {
-        let (send, recv) = mpsc::channel(10);
-        Ok(recv)
+        self.invoice_stream
+            .lock()
+            .await
+            .take()
+            .ok_or(NodeError::generic("Invoice stream is not initialized"))
     }
 
     async fn stream_log_messages(
