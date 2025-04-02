@@ -256,9 +256,7 @@ impl NodeAPI for Ldk {
         todo!()
     }
 
-    async fn stream_incoming_payments(
-        &self,
-    ) -> NodeResult<mpsc::Receiver<gl_client::signer::model::greenlight::IncomingPayment>> {
+    async fn stream_incoming_payments(&self) -> NodeResult<mpsc::Receiver<crate::models::Payment>> {
         let (send, recv) = mpsc::channel(10);
         Ok(recv)
     }

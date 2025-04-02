@@ -12,7 +12,6 @@ use bitcoin::hashes::{sha256, Hash};
 use bitcoin::util::bip32::ChildNumber;
 use chrono::Local;
 use futures::TryFutureExt;
-use gl_client::pb::incoming_payment;
 use log::{LevelFilter, Metadata, Record};
 use sdk_common::grpc;
 use sdk_common::prelude::*;
@@ -1649,7 +1648,7 @@ impl BreezServices {
                         }
                     };
 
-                    let i = match paid_invoice_res {
+                    let payment = match paid_invoice_res {
                         Some(i) => i,
                         None => {
                             debug!("invoice stream got None");
@@ -1658,33 +1657,28 @@ impl BreezServices {
                     };
 
                     debug!("invoice stream got new invoice");
-                    let p = match i.details {
-                        Some(incoming_payment::Details::Offchain(p)) => p,
-                        _ => continue,
+
+                    let res = cloned
+                        .persister
+                        .insert_or_update_payments(&vec![payment.clone()], false);
+                    debug!("paid invoice was added to payments list {res:?}");
+                    if let Ok(Some(mut node_info)) = cloned.persister.get_node_state() {
+                        node_info.channels_balance_msat += payment.amount_msat;
+                        let res = cloned.persister.set_node_state(&node_info);
+                        debug!("channel balance was updated {res:?}");
+                    }
+                    let bolt11 = if let PaymentDetails::Ln { ref data } = payment.details {
+                        data.bolt11.clone()
+                    } else {
+                        panic!("Empty PaymentDetails::Ln");
                     };
 
-                    let mut payment: Option<crate::models::Payment> = p.clone().try_into().ok();
-                    if let Some(ref p) = payment {
-                        let res = cloned
-                            .persister
-                            .insert_or_update_payments(&vec![p.clone()], false);
-                        debug!("paid invoice was added to payments list {res:?}");
-                        if let Ok(Some(mut node_info)) = cloned.persister.get_node_state() {
-                            node_info.channels_balance_msat += p.amount_msat;
-                            let res = cloned.persister.set_node_state(&node_info);
-                            debug!("channel balance was updated {res:?}");
-                        }
-                        payment = cloned
-                            .persister
-                            .get_payment_by_hash(&p.id)
-                            .unwrap_or(payment);
-                    }
                     _ = cloned
                         .on_event(BreezEvent::InvoicePaid {
                             details: InvoicePaidDetails {
-                                payment_hash: hex::encode(p.payment_hash),
-                                bolt11: p.bolt11,
-                                payment,
+                                payment_hash: payment.id.clone(),
+                                bolt11,
+                                payment: Some(payment),
                             },
                         })
                         .await;

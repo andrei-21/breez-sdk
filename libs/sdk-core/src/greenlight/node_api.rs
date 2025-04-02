@@ -1754,9 +1754,7 @@ impl NodeAPI for Greenlight {
         Ok(tx_ids)
     }
 
-    async fn stream_incoming_payments(
-        &self,
-    ) -> NodeResult<mpsc::Receiver<gl_client::signer::model::greenlight::IncomingPayment>> {
+    async fn stream_incoming_payments(&self) -> NodeResult<mpsc::Receiver<crate::models::Payment>> {
         todo!()
     }
 

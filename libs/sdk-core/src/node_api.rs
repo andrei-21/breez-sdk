@@ -180,7 +180,7 @@ pub trait NodeAPI: Send + Sync {
     async fn close_peer_channels(&self, node_id: String) -> NodeResult<Vec<String>>;
     async fn stream_incoming_payments(
         &self,
-    ) -> NodeResult<mpsc::Receiver<gl_client::signer::model::greenlight::IncomingPayment>>;
+    ) -> NodeResult<mpsc::Receiver<crate::models::Payment>>;
     async fn stream_log_messages(
         &self,
     ) -> NodeResult<mpsc::Receiver<gl_client::signer::model::greenlight::LogEntry>>;

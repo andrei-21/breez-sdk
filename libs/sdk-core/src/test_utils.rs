@@ -436,9 +436,7 @@ impl NodeAPI for MockNodeAPI {
     async fn close_peer_channels(&self, _node_id: String) -> NodeResult<Vec<String>> {
         Ok(vec![])
     }
-    async fn stream_incoming_payments(
-        &self,
-    ) -> NodeResult<mpsc::Receiver<gl_client::signer::model::greenlight::IncomingPayment>> {
+    async fn stream_incoming_payments(&self) -> NodeResult<mpsc::Receiver<crate::models::Payment>> {
         Err(NodeError::Generic("Not implemented".to_string()))
     }
 
