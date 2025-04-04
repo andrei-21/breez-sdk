@@ -31,7 +31,7 @@ once_cell = "1"
 prost = "^0.11"
 regex = "1.8.1"
 reqwest = { version = "0.12.13", features = ["json"] }
-rusqlite = { version = "0.29", features = [
+rusqlite = { version = "0.31", features = [
   "serde_json",
   "bundled",
   "backup",
