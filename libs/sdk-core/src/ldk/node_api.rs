@@ -34,15 +34,31 @@ pub(crate) struct Ldk {
 
 impl Ldk {
     pub fn build(seed: &[u8]) -> Self {
-        let mut builder = Builder::new();
+        let lsp = "020e5a02ec22a49ba41167629d8fb939b2e8c4ae7fd4197d2a12f189dc3d8dd917";
+        let lsp = PublicKey::from_str(lsp).unwrap();
+
+        let mut config = ldk_node::config::Config::default();
+        config.anchor_channels_config = Some(ldk_node::config::AnchorChannelsConfig {
+            trusted_peers_no_reserve: vec![lsp],
+            per_channel_reserve_sats: 0,
+        });
+        config.trusted_peers_0conf = vec![lsp];
+
+        let mut builder = Builder::from_config(config);
 
         let mut bytes = [0u8; 64];
-        bytes.copy_from_slice(&seed);
+        bytes.copy_from_slice(seed);
         let seed = bytes;
-        builder.set_entropy_seed_bytes(seed.clone());
+        builder.set_entropy_seed_bytes(seed);
 
-        builder.set_network(ldk_node::bitcoin::Network::Bitcoin);
-        builder.set_chain_source_esplora("https://blockstream.info/api".to_string(), None);
+        builder.set_network(ldk_node::bitcoin::Network::Regtest);
+        // builder.set_chain_source_esplora("https://blockstream.info/api".to_string(), None);
+        builder.set_chain_source_bitcoind_rpc(
+            "localhost".to_string(),
+            18443,
+            "btcuser".to_string(),
+            "btcpass".to_string(),
+        );
         builder.set_gossip_source_rgs("https://rapidsync.lightningdevkit.org/snapshot".to_string());
         let node = Arc::new(builder.build().unwrap());
         Self {
@@ -53,7 +69,7 @@ impl Ldk {
     }
 }
 
-async fn stream_invoices(node: Arc<Node>, tx: mpsc::Sender<crate::models::Payment>) {
+async fn stream_invoices(node: Arc<Node>, tx: mpsc::Sender<Payment>) {
     loop {
         let event = node.next_event_async().await;
         info!("Event: {event:?}");
@@ -65,17 +81,17 @@ async fn stream_invoices(node: Arc<Node>, tx: mpsc::Sender<crate::models::Paymen
                 custom_records: _,
             } => {
                 let payment_hash = hex::encode(payment_hash.0);
-                let payment = crate::models::Payment {
+                let payment = Payment {
                     id: payment_hash.clone(),
-                    payment_type: crate::models::PaymentType::Received,
+                    payment_type: PaymentType::Received,
                     payment_time: 0,
                     amount_msat,
                     fee_msat: 0,
-                    status: crate::models::PaymentStatus::Complete,
+                    status: PaymentStatus::Complete,
                     error: None,
                     description: None,
-                    details: crate::models::PaymentDetails::Ln {
-                        data: crate::models::LnPaymentDetails {
+                    details: PaymentDetails::Ln {
+                        data: LnPaymentDetails {
                             payment_hash,
                             label: String::new(),
                             destination_pubkey: node.node_id().to_string(),
@@ -164,6 +180,29 @@ impl NodeAPI for Ldk {
         Ok(invoice)
     }
 
+    async fn sign_invoice(&self, invoice: RawBolt11Invoice) -> NodeResult<String> {
+        let network = self.node.config().network;
+        let xprv = ldk_node::bitcoin::bip32::Xpriv::new_master(network, &self.seed).unwrap();
+        let ldk_seed_bytes: [u8; 32] = xprv.private_key.secret_bytes();
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        let key_manager = KeysManager::new(&ldk_seed_bytes, now.as_secs(), now.subsec_nanos());
+        let signature = key_manager
+            .sign_invoice(
+                invoice.hrp.to_string().as_bytes(),
+                &invoice.data.to_base32(),
+                Recipient::Node,
+            )
+            .unwrap();
+        let signed = invoice
+            .sign(|_| Ok::<RecoverableSignature, ()>(signature))
+            .unwrap()
+            .to_string();
+        debug!("sign_invoice: {signed:?}");
+        Ok(signed)
+    }
+
     async fn fetch_bolt11(&self, payment_hash: Vec<u8>) -> NodeResult<Option<FetchBolt11Result>> {
         todo!()
     }
@@ -195,6 +234,8 @@ impl NodeAPI for Ldk {
             .into_iter()
             .flat_map(map_channel)
             .collect();
+
+        debug!("Channels: {channels:?}");
 
         let node_state = NodeState {
             id: self.node.node_id().to_string(),
@@ -295,34 +336,11 @@ impl NodeAPI for Ldk {
         todo!()
     }
 
-    async fn sign_invoice(&self, invoice: RawBolt11Invoice) -> NodeResult<String> {
-        let network = self.node.config().network;
-        let xprv = ldk_node::bitcoin::bip32::Xpriv::new_master(network, &self.seed).unwrap();
-        let ldk_seed_bytes: [u8; 32] = xprv.private_key.secret_bytes();
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap();
-        let key_manager = KeysManager::new(&ldk_seed_bytes, now.as_secs(), now.subsec_nanos());
-        let signature = key_manager
-            .sign_invoice(
-                &invoice.hrp.to_string().as_bytes(),
-                &invoice.data.to_base32(),
-                Recipient::Node,
-            )
-            .unwrap();
-        let signed = invoice
-            .sign(|_| Ok::<RecoverableSignature, ()>(signature))
-            .unwrap()
-            .to_string();
-        debug!("sign_invoice: {signed:?}");
-        Ok(signed)
-    }
-
     async fn close_peer_channels(&self, node_id: String) -> NodeResult<Vec<String>> {
         todo!()
     }
 
-    async fn stream_incoming_payments(&self) -> NodeResult<mpsc::Receiver<crate::models::Payment>> {
+    async fn stream_incoming_payments(&self) -> NodeResult<mpsc::Receiver<Payment>> {
         self.invoice_stream
             .lock()
             .await
@@ -359,7 +377,7 @@ impl NodeAPI for Ldk {
     }
 
     async fn derive_bip32_key(&self, path: Vec<ChildNumber>) -> NodeResult<ExtendedPrivKey> {
-        let network = sdk_common::prelude::Network::Bitcoin;
+        let network = sdk_common::prelude::Network::Regtest;
         Ok(ExtendedPrivKey::new_master(network.into(), &self.seed)?
             .derive_priv(&Secp256k1::new(), &path)?)
     }
@@ -413,7 +431,7 @@ fn get_balance(balance: PendingSweepBalance) -> u64 {
     }
 }
 
-fn map_channel(channel: ldk_node::ChannelDetails) -> Option<crate::models::Channel> {
+fn map_channel(channel: ldk_node::ChannelDetails) -> Option<Channel> {
     let funding_txo = channel.funding_txo?;
     let funding_txid = funding_txo.txid.to_string();
     let funding_outnum = Some(funding_txo.vout);
@@ -444,7 +462,7 @@ fn map_channel(channel: ldk_node::ChannelDetails) -> Option<crate::models::Chann
     // TODO: Convert HTLCs.
     let htlcs = Vec::new();
 
-    Some(crate::models::Channel {
+    Some(Channel {
         funding_txid,
         short_channel_id,
         state,
@@ -466,5 +484,5 @@ fn format_scid(id: u64) -> String {
 }
 
 fn to_node_error(err: ldk_node::NodeError) -> NodeError {
-    NodeError::generic(&err.to_string())
+    NodeError::generic(&format!("LDK Node error: {err}"))
 }

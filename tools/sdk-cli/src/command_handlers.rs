@@ -111,6 +111,8 @@ pub(crate) async fn handle_command(
                     invite_code,
                 },
             };
+			config.breezserver = "http://localhost:8888".to_string();
+			config.network = breez_sdk_core::Network::Regtest;
 
             connect(ConnectRequest {
                 config,
