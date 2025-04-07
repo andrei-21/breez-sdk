@@ -53,7 +53,8 @@ tokio-stream = "0.1.14"
 serde_with = "3.3.0"
 regex = { workspace = true }
 ryu = "1.0.18"
-ldk-node = { git = "https://github.com/lightningdevkit/ldk-node", version = "0.5.0" }
+# ldk-node = { git = "https://github.com/lightningdevkit/ldk-node", version = "0.5.0" }
+ldk-node = { git = "https://github.com/andrei-21/ldk-node", branch = "prototype" }
 
 [dev-dependencies]
 mockall = "0.13.1"

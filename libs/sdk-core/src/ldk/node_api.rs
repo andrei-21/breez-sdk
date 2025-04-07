@@ -167,17 +167,23 @@ impl NodeAPI for Ldk {
         debug!("create_invoice: {request:?}");
         let description =
             Bolt11InvoiceDescription::Direct(Description::new(request.description).unwrap());
-        let invoice = self
-            .node
-            .bolt11_payment()
-            .receive(
-                request.amount_msat,
-                &description,
-                request.expiry.unwrap_or(3600),
-            )
-            .map_err(to_node_error)?
-            .to_string();
-        Ok(invoice)
+        let expiry = request.expiry.unwrap_or(3600);
+        let payments = self.node.bolt11_payment();
+
+        let result = match request.payer_amount_msat {
+            Some(payer_amount_msat) => {
+                let lsp_fees_msat = payer_amount_msat - request.amount_msat;
+                payments.register_incoming_payment(
+                    payer_amount_msat,
+                    lsp_fees_msat,
+                    &description,
+                    expiry,
+                )
+            }
+            None => payments.receive(request.amount_msat, &description, expiry),
+        };
+
+        result.map(|i| i.to_string()).map_err(to_node_error)
     }
 
     async fn sign_invoice(&self, invoice: RawBolt11Invoice) -> NodeResult<String> {
@@ -356,7 +362,7 @@ impl NodeAPI for Ldk {
     }
 
     async fn static_backup(&self) -> NodeResult<Vec<String>> {
-        todo!()
+        Ok(Vec::new())
     }
 
     async fn generate_diagnostic_data(&self) -> NodeResult<Value> {

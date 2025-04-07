@@ -2478,7 +2478,7 @@ dependencies = [
 [[package]]
 name = "ldk-node"
 version = "0.5.0+git"
-source = "git+https://github.com/lightningdevkit/ldk-node#5abb42faec79e38c4775f7b107aaf372a5a2f604"
+source = "git+https://github.com/andrei-21/ldk-node?branch=prototype#5760cb07d26d9383e0eb52ec2399666f13a59200"
 dependencies = [
  "base64 0.22.1",
  "bdk_chain",
