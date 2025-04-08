@@ -2707,11 +2707,14 @@ impl Receiver for PaymentReceiver {
 }
 
 impl PaymentReceiver {
+    #[allow(unused_variables, unreachable_code)]
     async fn ensure_hint(
         &self,
         invoice: &str,
         lsp_info: &LspInformation,
     ) -> Result<String, ReceivePaymentError> {
+        // TODO: Check routing hints prensense without asking the node for routing hints.
+        return Ok(invoice.to_string());
         info!("Getting routing hints from node");
         let (mut hints, has_public_channel) = self.node_api.get_routing_hints(lsp_info).await?;
         if !has_public_channel && hints.is_empty() {
