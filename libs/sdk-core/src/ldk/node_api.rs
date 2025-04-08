@@ -50,6 +50,7 @@ impl Ldk {
         bytes.copy_from_slice(seed);
         let seed = bytes;
         builder.set_entropy_seed_bytes(seed);
+        builder.set_filesystem_logger(None, Some(ldk_node::logger::LogLevel::Trace));
 
         builder.set_network(ldk_node::bitcoin::Network::Regtest);
         // builder.set_chain_source_esplora("https://blockstream.info/api".to_string(), None);
@@ -234,12 +235,13 @@ impl NodeAPI for Ldk {
             .map(|p| p.node_id.to_string())
             .collect();
 
-        let channels = self
-            .node
-            .list_channels()
-            .into_iter()
-            .flat_map(map_channel)
-            .collect();
+        let channels = self.node.list_channels();
+        let max_receivable_single_payment_amount_msat = channels
+            .iter()
+            .flat_map(|c| c.inbound_htlc_maximum_msat)
+            .sum();
+
+        let channels = channels.into_iter().flat_map(map_channel).collect();
 
         debug!("Channels: {channels:?}");
 
@@ -256,7 +258,7 @@ impl NodeAPI for Ldk {
             //max_chan_reserve_msats: channels_balance - min(max_payable, channels_balance),
             max_chan_reserve_msats: 0,
             connected_peers,
-            max_receivable_single_payment_amount_msat: 0,
+            max_receivable_single_payment_amount_msat,
             total_inbound_liquidity_msats: 0,
         };
         let response = SyncResponse {
