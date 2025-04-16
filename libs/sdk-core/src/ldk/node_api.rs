@@ -34,7 +34,7 @@ pub(crate) struct Ldk {
 
 impl Ldk {
     pub fn build(seed: &[u8]) -> Self {
-        let lsp = "020e5a02ec22a49ba41167629d8fb939b2e8c4ae7fd4197d2a12f189dc3d8dd917";
+        let lsp = "0361984fe2a03cc594e97de423bf461096dd26a52e77feda68510377f360e430d4";
         let lsp = PublicKey::from_str(lsp).unwrap();
 
         let mut config = ldk_node::config::Config::default();
@@ -50,17 +50,18 @@ impl Ldk {
         bytes.copy_from_slice(seed);
         let seed = bytes;
         builder.set_entropy_seed_bytes(seed);
-        builder.set_filesystem_logger(None, Some(ldk_node::logger::LogLevel::Trace));
+        builder.set_filesystem_logger(None, Some(ldk_node::logger::LogLevel::Debug));
 
-        builder.set_network(ldk_node::bitcoin::Network::Regtest);
         // builder.set_chain_source_esplora("https://blockstream.info/api".to_string(), None);
+        // builder.set_gossip_source_rgs("https://rapidsync.lightningdevkit.org/snapshot".to_string());
+        builder.set_network(ldk_node::bitcoin::Network::Regtest);
         builder.set_chain_source_bitcoind_rpc(
             "localhost".to_string(),
             18443,
             "btcuser".to_string(),
             "btcpass".to_string(),
         );
-        builder.set_gossip_source_rgs("https://rapidsync.lightningdevkit.org/snapshot".to_string());
+        builder.set_gossip_source_rgs("http://localhost:8011".to_string());
         let node = Arc::new(builder.build().unwrap());
         Self {
             seed,
