@@ -9,6 +9,7 @@ use futures::Stream;
 use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
+use ldk_node::payment::ConfirmationStatus;
 use ldk_node::{Builder, Event, Node, PendingSweepBalance};
 
 use core::str::FromStr;
@@ -350,7 +351,19 @@ impl NodeAPI for Ldk {
     }
 
     async fn close_peer_channels(&self, node_id: String) -> NodeResult<Vec<String>> {
-        todo!()
+        let node_id = PublicKey::from_str(&node_id).unwrap();
+        let channels = self
+            .node
+            .list_channels()
+            .into_iter()
+            .filter(|c| c.counterparty_node_id == node_id && c.is_channel_ready);
+        for channel_id in channels {
+            self.node
+                .close_channel(&channel_id.user_channel_id, node_id)
+                .map_err(to_node_error)?;
+        }
+        // TODO: Get closing tx ids.
+        Ok(vec!["closing_tx_id".to_string()])
     }
 
     async fn stream_incoming_payments(&self) -> NodeResult<mpsc::Receiver<Payment>> {
@@ -576,7 +589,15 @@ fn to_payment_details(
         },
         ldk_node::payment::PaymentKind::Bolt12Offer { .. } => todo!(),
         ldk_node::payment::PaymentKind::Bolt12Refund { .. } => todo!(),
-        ldk_node::payment::PaymentKind::Onchain { txid: _, status: _ } => todo!(),
+        // TODO: It is not necessary channel close.
+        ldk_node::payment::PaymentKind::Onchain { txid, status } => PaymentDetails::ClosedChannel {
+            data: ClosedChannelPaymentDetails {
+                state: to_channel_state(status),
+                funding_txid: String::new(),
+                short_channel_id: None,
+                closing_txid: Some(hex(txid)),
+            },
+        },
         ldk_node::payment::PaymentKind::Spontaneous { hash, preimage } => PaymentDetails::Ln {
             data: LnPaymentDetails {
                 payment_hash: hex(hash),
@@ -589,5 +610,12 @@ fn to_payment_details(
                 ..Default::default()
             },
         },
+    }
+}
+
+fn to_channel_state(status: &ConfirmationStatus) -> ChannelState {
+    match status {
+        ConfirmationStatus::Confirmed { .. } => ChannelState::Closed,
+        ConfirmationStatus::Unconfirmed => ChannelState::PendingClose,
     }
 }
