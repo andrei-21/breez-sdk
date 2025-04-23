@@ -21,6 +21,7 @@ use crate::bitcoin::bech32::ToBase32;
 use crate::bitcoin::secp256k1::ecdsa::RecoverableSignature;
 use crate::bitcoin::secp256k1::Secp256k1;
 use crate::bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
+use crate::ldk::logger::Logger;
 use crate::lightning::sign::{KeysManager, NodeSigner, Recipient};
 use crate::lightning_invoice::RawBolt11Invoice;
 use crate::node_api::{CreateInvoiceRequest, FetchBolt11Result, NodeAPI, NodeError, NodeResult};
@@ -51,7 +52,7 @@ impl Ldk {
         bytes.copy_from_slice(seed);
         let seed = bytes;
         builder.set_entropy_seed_bytes(seed);
-        builder.set_filesystem_logger(None, Some(ldk_node::logger::LogLevel::Debug));
+        builder.set_custom_logger(Arc::new(Logger {}));
 
         // builder.set_chain_source_esplora("https://blockstream.info/api".to_string(), None);
         // builder.set_gossip_source_rgs("https://rapidsync.lightningdevkit.org/snapshot".to_string());
