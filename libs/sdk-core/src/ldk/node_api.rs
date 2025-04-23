@@ -214,6 +214,14 @@ impl NodeAPI for Ldk {
 
         let channels = channels.into_iter().flat_map(map_channel).collect();
 
+        let node_id = self.node.node_id();
+        let payments = self
+            .node
+            .list_payments()
+            .into_iter()
+            .map(|p| to_payment(p, node_id))
+            .collect();
+
         debug!("Channels: {channels:?}");
 
         let node_state = NodeState {
@@ -235,7 +243,7 @@ impl NodeAPI for Ldk {
         let response = SyncResponse {
             sync_state: Value::Null,
             node_state,
-            payments: Vec::new(),
+            payments,
             channels,
         };
         Ok(response)
@@ -285,7 +293,19 @@ impl NodeAPI for Ldk {
         extra_tlvs: Option<Vec<TlvEntry>>,
         label: Option<String>,
     ) -> NodeResult<Payment> {
-        todo!()
+        let node_id = PublicKey::from_str(&node_id).unwrap();
+        let payment_id = self
+            .node
+            .spontaneous_payment()
+            .send(amount_msat, node_id, None)
+            .map_err(to_node_error)?;
+        let payment = self
+            .node
+            .list_payments_with_filter(|p| p.id == payment_id)
+            .into_iter()
+            .next()
+            .unwrap();
+        Ok(to_payment(payment, self.node.node_id()))
     }
 
     async fn node_id(&self) -> NodeResult<String> {
