@@ -35,7 +35,7 @@ pub(crate) struct Ldk {
 }
 
 impl Ldk {
-    pub fn build(seed: &[u8]) -> Self {
+    pub fn build(working_dir: String, seed: &[u8]) -> Self {
         let lsp = "0361984fe2a03cc594e97de423bf461096dd26a52e77feda68510377f360e430d4";
         let lsp = PublicKey::from_str(lsp).unwrap();
 
@@ -53,6 +53,7 @@ impl Ldk {
         let seed = bytes;
         builder.set_entropy_seed_bytes(seed);
         builder.set_custom_logger(Arc::new(Logger {}));
+        builder.set_storage_dir_path(working_dir);
 
         // builder.set_chain_source_esplora("https://blockstream.info/api".to_string(), None);
         // builder.set_gossip_source_rgs("https://rapidsync.lightningdevkit.org/snapshot".to_string());
@@ -195,6 +196,7 @@ impl NodeAPI for Ldk {
         const MAX_PAYMENT_AMOUNT_MSAT: u64 = 4294967000;
 
         let balances = self.node.list_balances();
+        debug!("Balances: {balances:?}");
         let pending_onchain_balance_sats: u64 = balances
             .pending_balances_from_channel_closures
             .into_iter()
@@ -213,6 +215,7 @@ impl NodeAPI for Ldk {
             .iter()
             .flat_map(|c| c.inbound_htlc_maximum_msat)
             .sum();
+        debug!("Channels: {channels:?}");
 
         let channels = channels.into_iter().flat_map(map_channel).collect();
 

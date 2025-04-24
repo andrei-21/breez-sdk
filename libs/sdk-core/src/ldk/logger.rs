@@ -8,7 +8,7 @@ impl LogWriter for Logger {
         let record = Record::builder()
             .args(record.args)
             .level(to_log_level(record.level))
-            .target("LDK Node")
+            .target("ldk_node")
             .line(Some(record.line))
             .module_path(Some(record.module_path))
             .build();
