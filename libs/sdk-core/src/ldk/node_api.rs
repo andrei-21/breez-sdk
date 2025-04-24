@@ -7,6 +7,7 @@ use anyhow::Result;
 use futures::Stream;
 
 use ldk_node::bitcoin::secp256k1::PublicKey;
+use ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
 use ldk_node::payment::ConfirmationStatus;
@@ -80,16 +81,49 @@ async fn stream_invoices(node: Arc<Node>, tx: mpsc::Sender<Payment>) {
         info!("Event: {event:?}");
         match event {
             Event::PaymentReceived { payment_id, .. } => {
-                let payment_id = payment_id.unwrap();
-                let payment = node
-                    .list_payments_with_filter(|p| p.id == payment_id)
-                    .into_iter()
-                    .next()
-                    .unwrap();
-                let payment = to_payment(payment, node.node_id());
+                let payment = find_and_map_payment(&node, payment_id.unwrap());
                 let _ = tx.send(payment).await;
             }
-            _ => (),
+
+            Event::PaymentSuccessful { payment_id, .. } => {
+                let payment = find_and_map_payment(&node, payment_id.unwrap());
+                let _ = tx.send(payment).await;
+            }
+            Event::PaymentFailed {
+                payment_id,
+                payment_hash: _,
+                reason,
+            } => {
+                let mut payment = find_and_map_payment(&node, payment_id.unwrap());
+                payment.error = reason.map(|r| format!("{r:?}"));
+                let _ = tx.send(payment).await;
+            }
+            Event::PaymentClaimable {
+                payment_id: _,
+                payment_hash: _,
+                claimable_amount_msat: _,
+                claim_deadline: _,
+                custom_records: _,
+            } => (),
+            Event::PaymentForwarded { .. } => (),
+            Event::ChannelPending {
+                channel_id: _,
+                user_channel_id: _,
+                former_temporary_channel_id: _,
+                counterparty_node_id: _,
+                funding_txo: _,
+            } => (),
+            Event::ChannelReady {
+                channel_id: _,
+                user_channel_id: _,
+                counterparty_node_id: _,
+            } => (),
+            Event::ChannelClosed {
+                channel_id: _,
+                user_channel_id: _,
+                counterparty_node_id: _,
+                reason: _,
+            } => (),
         }
         if let Err(e) = node.event_handled() {
             error!("Failed to report that event was handled: {e}");
@@ -272,13 +306,8 @@ impl NodeAPI for Ldk {
         }
         .map_err(to_node_error)?;
 
-        let payment = self
-            .node
-            .list_payments_with_filter(|p| p.id == payment_id)
-            .into_iter()
-            .next()
-            .unwrap();
-        Ok(to_payment(payment, self.node.node_id()))
+        let payment = find_and_map_payment(&self.node, payment_id);
+        Ok(payment)
     }
 
     async fn send_trampoline_payment(
@@ -304,13 +333,8 @@ impl NodeAPI for Ldk {
             .spontaneous_payment()
             .send(amount_msat, node_id, None)
             .map_err(to_node_error)?;
-        let payment = self
-            .node
-            .list_payments_with_filter(|p| p.id == payment_id)
-            .into_iter()
-            .next()
-            .unwrap();
-        Ok(to_payment(payment, self.node.node_id()))
+        let payment = find_and_map_payment(&self.node, payment_id);
+        Ok(payment)
     }
 
     async fn node_id(&self) -> NodeResult<String> {
@@ -519,6 +543,15 @@ fn hex<T: std::borrow::Borrow<[u8]>>(bytes: &T) -> String {
 
 fn to_node_error(err: ldk_node::NodeError) -> NodeError {
     NodeError::generic(&format!("LDK Node error: {err}"))
+}
+
+fn find_and_map_payment(node: &Node, payment_id: PaymentId) -> Payment {
+    let payment = node
+        .list_payments_with_filter(|p| p.id == payment_id)
+        .into_iter()
+        .next()
+        .unwrap();
+    to_payment(payment, node.node_id())
 }
 
 fn to_payment(payment: ldk_node::payment::PaymentDetails, local_node_id: PublicKey) -> Payment {
