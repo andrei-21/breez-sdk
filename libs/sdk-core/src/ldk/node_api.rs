@@ -455,10 +455,12 @@ impl NodeAPI for Ldk {
     async fn stream_custom_messages(
         &self,
     ) -> NodeResult<Pin<Box<dyn Stream<Item = Result<CustomMessage>> + Send>>> {
+        // For LSPS0.
         todo!()
     }
 
     async fn send_custom_message(&self, message: CustomMessage) -> NodeResult<()> {
+        // For LSPS0.
         todo!()
     }
 

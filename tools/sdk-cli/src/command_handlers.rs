@@ -111,8 +111,8 @@ pub(crate) async fn handle_command(
                     invite_code,
                 },
             };
-			config.breezserver = "http://localhost:8888".to_string();
-			config.network = breez_sdk_core::Network::Regtest;
+            config.breezserver = "http://localhost:8888".to_string();
+            config.network = breez_sdk_core::Network::Regtest;
 
             connect(ConnectRequest {
                 config,
@@ -149,7 +149,7 @@ pub(crate) async fn handle_command(
                 .await?;
             let mut result = serde_json::to_string(&recv_payment_response)?;
             result.push('\n');
-            result.push_str(&build_qr_text(&recv_payment_response.ln_invoice.bolt11));
+            // result.push_str(&build_qr_text(&recv_payment_response.ln_invoice.bolt11));
             Ok(result)
         }
         Commands::OnchainPaymentLimits {} => {
@@ -616,6 +616,7 @@ pub(crate) async fn handle_command(
     }
 }
 
+#[allow(dead_code)]
 fn build_qr_text(text: &str) -> String {
     QrCode::with_error_correction_level(text, EcLevel::L)
         .unwrap()
