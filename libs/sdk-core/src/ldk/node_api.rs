@@ -7,6 +7,7 @@ use anyhow::Result;
 use futures::Stream;
 
 use ldk_node::bitcoin::secp256k1::PublicKey;
+use ldk_node::bitcoin::{Address, FeeRate};
 use ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
@@ -346,7 +347,18 @@ impl NodeAPI for Ldk {
         to_address: String,
         sat_per_vbyte: u32,
     ) -> NodeResult<Vec<u8>> {
-        todo!()
+        let address = Address::from_str(&to_address)
+            .unwrap()
+            .require_network(self.node.config().network)
+            .unwrap();
+        let fee_rate = FeeRate::from_sat_per_vb(sat_per_vbyte as u64).unwrap();
+        let txid = self
+            .node
+            .onchain_payment()
+            .send_all_to_address(&address, false, Some(fee_rate))
+            .map_err(to_node_error)?;
+        let txid: &[u8] = txid.as_ref();
+        Ok(txid.to_vec())
     }
 
     async fn prepare_redeem_onchain_funds(
