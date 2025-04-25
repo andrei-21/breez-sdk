@@ -60,12 +60,7 @@ impl Ldk {
         // builder.set_chain_source_esplora("https://blockstream.info/api".to_string(), None);
         // builder.set_gossip_source_rgs("https://rapidsync.lightningdevkit.org/snapshot".to_string());
         builder.set_network(ldk_node::bitcoin::Network::Regtest);
-        builder.set_chain_source_bitcoind_rpc(
-            "localhost".to_string(),
-            18443,
-            "btcuser".to_string(),
-            "btcpass".to_string(),
-        );
+        builder.set_chain_source_esplora("http://localhost:30000".to_string(), None);
         builder.set_gossip_source_rgs("http://localhost:8011".to_string());
         let node = Arc::new(builder.build().unwrap());
         Self {
