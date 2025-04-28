@@ -28,7 +28,7 @@ use tokio::sync::{mpsc, watch, Mutex};
 use tokio::time::sleep;
 use tokio_stream::Stream;
 use tokio_stream::StreamExt;
-use tonic::{Status, Streaming};
+use tonic::Status;
 
 use crate::backup::{BackupState, BackupTransport};
 use crate::bitcoin::hashes::hex::ToHex;

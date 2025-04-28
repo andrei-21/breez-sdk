@@ -191,6 +191,10 @@ impl NodeAPI for Ldk {
         result.map(|i| i.to_string()).map_err(to_node_error)
     }
 
+    async fn delete_invoice(&self, bolt11: String) -> NodeResult<()> {
+        todo!()
+    }
+
     async fn sign_invoice(&self, invoice: RawBolt11Invoice) -> NodeResult<String> {
         let network = self.node.config().network;
         let xprv = ldk_node::bitcoin::bip32::Xpriv::new_master(network, &self.seed).unwrap();
@@ -428,11 +432,11 @@ impl NodeAPI for Ldk {
         todo!()
     }
 
-    async fn max_sendable_amount(
+    async fn max_sendable_amount<'a>(
         &self,
         payee_node_id: Option<Vec<u8>>,
         max_hops: u32,
-        last_hop_hint: Option<&RouteHintHop>,
+        last_hop_hint: Option<&'a RouteHintHop>,
     ) -> NodeResult<Vec<MaxChannelAmount>> {
         todo!()
     }
