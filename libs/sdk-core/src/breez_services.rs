@@ -1639,7 +1639,7 @@ impl BreezServices {
 
                 loop {
                     let paid_invoice_res = tokio::select! {
-                        paid_invoice_res = invoice_stream.message() => {
+                        paid_invoice_res = invoice_stream.recv() => {
                             paid_invoice_res
                         }
 
@@ -1650,13 +1650,9 @@ impl BreezServices {
                     };
 
                     let i = match paid_invoice_res {
-                        Ok(Some(i)) => i,
-                        Ok(None) => {
+                        Some(i) => i,
+                        None => {
                             debug!("invoice stream got None");
-                            break;
-                        }
-                        Err(err) => {
-                            debug!("invoice stream got error: {:?}", err);
                             break;
                         }
                     };
@@ -1720,7 +1716,7 @@ impl BreezServices {
 
                 loop {
                     let log_message_res = tokio::select! {
-                        log_message_res = log_stream.message() => {
+                        log_message_res = log_stream.recv() => {
                             log_message_res
                         }
 
@@ -1731,13 +1727,9 @@ impl BreezServices {
                     };
 
                     match log_message_res {
-                        Ok(Some(l)) => info!("node-logs: {}", l.line),
-                        Ok(None) => {
+                        Some(l) => info!("node-logs: {}", l.line),
+                        None => {
                             // stream is closed, renew it
-                            break;
-                        }
-                        Err(err) => {
-                            debug!("failed to process log entry {:?}", err);
                             break;
                         }
                     };

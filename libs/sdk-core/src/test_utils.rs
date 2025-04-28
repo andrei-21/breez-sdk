@@ -438,13 +438,13 @@ impl NodeAPI for MockNodeAPI {
     }
     async fn stream_incoming_payments(
         &self,
-    ) -> NodeResult<Streaming<gl_client::signer::model::greenlight::IncomingPayment>> {
+    ) -> NodeResult<mpsc::Receiver<gl_client::signer::model::greenlight::IncomingPayment>> {
         Err(NodeError::Generic("Not implemented".to_string()))
     }
 
     async fn stream_log_messages(
         &self,
-    ) -> NodeResult<Streaming<gl_client::signer::model::greenlight::LogEntry>> {
+    ) -> NodeResult<mpsc::Receiver<gl_client::signer::model::greenlight::LogEntry>> {
         Err(NodeError::Generic("Not implemented".to_string()))
     }
 

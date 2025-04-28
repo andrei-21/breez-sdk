@@ -9,10 +9,10 @@ pub(crate) struct VssBackupTransport;
 #[tonic::async_trait]
 impl BackupTransport for VssBackupTransport {
     async fn pull(&self) -> SdkResult<Option<BackupState>> {
-        todo!()
+        Ok(None)
     }
 
     async fn push(&self, version: Option<u64>, hex: Vec<u8>) -> SdkResult<u64> {
-        todo!()
+        Ok(0)
     }
 }

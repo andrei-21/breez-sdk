@@ -36,7 +36,6 @@ use tokio::join;
 use tokio::sync::{mpsc, watch, Mutex};
 use tokio::time::{sleep, Instant, MissedTickBehavior};
 use tokio_stream::StreamExt;
-use tonic::Streaming;
 
 use crate::bitcoin::bech32::{u5, ToBase32};
 use crate::bitcoin::blockdata::constants::WITNESS_SCALE_FACTOR;
@@ -1757,24 +1756,14 @@ impl NodeAPI for Greenlight {
 
     async fn stream_incoming_payments(
         &self,
-    ) -> NodeResult<Streaming<gl_client::signer::model::greenlight::IncomingPayment>> {
-        let mut client = self.get_client().await?;
-        let req = gl_client::signer::model::greenlight::StreamIncomingFilter {};
-        let stream = with_connection_retry!(client.stream_incoming(req.clone()))
-            .await?
-            .into_inner();
-        Ok(stream)
+    ) -> NodeResult<mpsc::Receiver<gl_client::signer::model::greenlight::IncomingPayment>> {
+        todo!()
     }
 
     async fn stream_log_messages(
         &self,
-    ) -> NodeResult<Streaming<gl_client::signer::model::greenlight::LogEntry>> {
-        let mut client = self.get_client().await?;
-        let req = gl_client::signer::model::greenlight::StreamLogRequest {};
-        let stream = with_connection_retry!(client.stream_log(req.clone()))
-            .await?
-            .into_inner();
-        Ok(stream)
+    ) -> NodeResult<mpsc::Receiver<gl_client::signer::model::greenlight::LogEntry>> {
+        todo!()
     }
 
     async fn static_backup(&self) -> NodeResult<Vec<String>> {

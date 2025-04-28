@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use anyhow::Result;
 use futures::Stream;
@@ -8,7 +9,6 @@ use ldk_node::{Builder, Node};
 use sdk_common::prelude::*;
 use serde_json::Value;
 use tokio::sync::{mpsc, watch};
-use tonic::Streaming;
 
 use crate::bitcoin::secp256k1::Secp256k1;
 use crate::bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
@@ -18,8 +18,8 @@ use crate::{models::*, LspInformation};
 use crate::{PrepareRedeemOnchainFundsRequest, PrepareRedeemOnchainFundsResponse};
 
 pub(crate) struct Ldk {
-    node: Node,
     seed: [u8; 64],
+    node: Arc<Node>,
 }
 
 impl Ldk {
@@ -36,8 +36,8 @@ impl Ldk {
         builder.set_gossip_source_rgs(
             "https://rapidsync.lightningdevkit.org/testnet/snapshot".to_string(),
         );
-        let node = builder.build().unwrap();
-        Self { node, seed }
+        let node = Arc::new(builder.build().unwrap());
+        Self { seed, node }
     }
 }
 
@@ -45,13 +45,25 @@ impl Ldk {
 #[tonic::async_trait]
 impl NodeAPI for Ldk {
     /// Starts the node.
-    async fn start_signer(&self, shutdown: mpsc::Receiver<()>) {
+    async fn start_signer(&self, mut shutdown: mpsc::Receiver<()>) {
+        debug!("Starting node");
         self.node.start().unwrap();
+        debug!("Node started");
+        let node = Arc::clone(&self.node);
+        let _ = tokio::spawn(async move {
+            let _ = shutdown.recv().await;
+            debug!("Received shutdown signal");
+            if let Err(e) = node.stop() {
+                error!("{e}");
+            }
+            debug!("Node stopped");
+        })
+        .await;
     }
 
     /// Keeps background tasks running.
     async fn start_keep_alive(&self, shutdown: watch::Receiver<()>) {
-        println!("start_keep_alive");
+        debug!("ldk: start_keep_alive()");
     }
 
     async fn node_credentials(&self) -> NodeResult<Option<NodeCredentials>> {
@@ -164,14 +176,16 @@ impl NodeAPI for Ldk {
 
     async fn stream_incoming_payments(
         &self,
-    ) -> NodeResult<Streaming<gl_client::signer::model::greenlight::IncomingPayment>> {
-        todo!()
+    ) -> NodeResult<mpsc::Receiver<gl_client::signer::model::greenlight::IncomingPayment>> {
+        let (send, recv) = mpsc::channel(10);
+        Ok(recv)
     }
 
     async fn stream_log_messages(
         &self,
-    ) -> NodeResult<Streaming<gl_client::signer::model::greenlight::LogEntry>> {
-        todo!()
+    ) -> NodeResult<mpsc::Receiver<gl_client::signer::model::greenlight::LogEntry>> {
+        let (send, recv) = mpsc::channel(10);
+        Ok(recv)
     }
 
     async fn static_backup(&self) -> NodeResult<Vec<String>> {
