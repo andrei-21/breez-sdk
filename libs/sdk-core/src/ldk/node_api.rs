@@ -75,44 +75,14 @@ async fn stream_invoices(node: Arc<Node>, tx: mpsc::Sender<Payment>) {
         let event = node.next_event_async().await;
         info!("Event: {event:?}");
         match event {
-            Event::PaymentReceived {
-                payment_id: _,
-                payment_hash,
-                amount_msat,
-                custom_records: _,
-            } => {
-                let payment_hash = hex::encode(payment_hash.0);
-                let payment = Payment {
-                    id: payment_hash.clone(),
-                    payment_type: PaymentType::Received,
-                    payment_time: 0,
-                    amount_msat,
-                    fee_msat: 0,
-                    status: PaymentStatus::Complete,
-                    error: None,
-                    description: None,
-                    details: PaymentDetails::Ln {
-                        data: LnPaymentDetails {
-                            payment_hash,
-                            label: String::new(),
-                            destination_pubkey: node.node_id().to_string(),
-                            payment_preimage: String::new(),
-                            keysend: false,
-                            bolt11: String::new(),
-                            lnurl_success_action: None, // For received payments, this is None
-                            lnurl_pay_domain: None,     // For received payments, this is None
-                            lnurl_pay_comment: None,    // For received payments, this is None
-                            lnurl_metadata: None,       // For received payments, this is None
-                            ln_address: None,
-                            lnurl_withdraw_endpoint: None,
-                            swap_info: None,
-                            reverse_swap_info: None,
-                            pending_expiration_block: None,
-                            open_channel_bolt11: None,
-                        },
-                    },
-                    metadata: None,
-                };
+            Event::PaymentReceived { payment_id, .. } => {
+                let payment_id = payment_id.unwrap();
+                let payment = node
+                    .list_payments_with_filter(|p| p.id == payment_id)
+                    .into_iter()
+                    .next()
+                    .unwrap();
+                let payment = to_payment(payment, node.node_id());
                 let _ = tx.send(payment).await;
             }
             _ => (),
@@ -280,7 +250,21 @@ impl NodeAPI for Ldk {
         amount_msat: Option<u64>,
         label: Option<String>,
     ) -> NodeResult<Payment> {
-        todo!()
+        let invoice = ldk_node::lightning_invoice::Bolt11Invoice::from_str(&bolt11).unwrap();
+        let payments = self.node.bolt11_payment();
+        let payment_id = match amount_msat {
+            Some(amount_msat) => payments.send_using_amount(&invoice, amount_msat, None),
+            None => payments.send(&invoice, None),
+        }
+        .map_err(to_node_error)?;
+
+        let payment = self
+            .node
+            .list_payments_with_filter(|p| p.id == payment_id)
+            .into_iter()
+            .next()
+            .unwrap();
+        Ok(to_payment(payment, self.node.node_id()))
     }
 
     async fn send_trampoline_payment(
@@ -491,6 +475,98 @@ fn format_scid(id: u64) -> String {
     id.to_string()
 }
 
+fn hex<T: std::borrow::Borrow<[u8]>>(bytes: &T) -> String {
+    hex::encode(bytes.borrow())
+}
+
 fn to_node_error(err: ldk_node::NodeError) -> NodeError {
     NodeError::generic(&format!("LDK Node error: {err}"))
+}
+
+fn to_payment(payment: ldk_node::payment::PaymentDetails, local_node_id: PublicKey) -> Payment {
+    let payment_type = match payment.direction {
+        ldk_node::payment::PaymentDirection::Inbound => PaymentType::Received,
+        ldk_node::payment::PaymentDirection::Outbound => PaymentType::Sent,
+    };
+    Payment {
+        id: hex(&payment.id),
+        payment_type,
+        payment_time: payment.latest_update_timestamp as i64,
+        amount_msat: payment.amount_msat.unwrap_or_default(),
+        fee_msat: payment.fee_paid_msat.unwrap_or_default(),
+        status: to_payment_status(payment.status),
+        error: None,
+        description: None,
+        details: to_payment_details(&payment, local_node_id),
+        metadata: None,
+    }
+}
+
+fn to_payment_status(status: ldk_node::payment::PaymentStatus) -> PaymentStatus {
+    match status {
+        ldk_node::payment::PaymentStatus::Pending => PaymentStatus::Pending,
+        ldk_node::payment::PaymentStatus::Succeeded => PaymentStatus::Complete,
+        ldk_node::payment::PaymentStatus::Failed => PaymentStatus::Failed,
+    }
+}
+
+fn to_payment_details(
+    payment: &ldk_node::payment::PaymentDetails,
+    local_node_id: PublicKey,
+) -> PaymentDetails {
+    let destination_pubkey = match payment.direction {
+        ldk_node::payment::PaymentDirection::Inbound => local_node_id.to_string(),
+        ldk_node::payment::PaymentDirection::Outbound => String::new(),
+    };
+    match &payment.kind {
+        ldk_node::payment::PaymentKind::Bolt11 {
+            hash,
+            preimage,
+            secret: _,
+        } => PaymentDetails::Ln {
+            data: LnPaymentDetails {
+                payment_hash: hex(hash),
+                label: String::new(),
+                destination_pubkey,
+                payment_preimage: preimage.as_ref().map(hex).unwrap_or_default(),
+                keysend: false,
+                bolt11: String::new(),
+                open_channel_bolt11: None,
+                ..Default::default()
+            },
+        },
+        ldk_node::payment::PaymentKind::Bolt11Jit {
+            hash,
+            preimage,
+            secret: _,
+            counterparty_skimmed_fee_msat: _,
+            lsp_fee_limits: _,
+        } => PaymentDetails::Ln {
+            data: LnPaymentDetails {
+                payment_hash: hex(hash),
+                label: String::new(),
+                destination_pubkey,
+                payment_preimage: preimage.as_ref().map(hex).unwrap_or_default(),
+                keysend: false,
+                bolt11: String::new(),
+                open_channel_bolt11: None,
+                ..Default::default()
+            },
+        },
+        ldk_node::payment::PaymentKind::Bolt12Offer { .. } => todo!(),
+        ldk_node::payment::PaymentKind::Bolt12Refund { .. } => todo!(),
+        ldk_node::payment::PaymentKind::Onchain { txid: _, status: _ } => todo!(),
+        ldk_node::payment::PaymentKind::Spontaneous { hash, preimage } => PaymentDetails::Ln {
+            data: LnPaymentDetails {
+                payment_hash: hex(hash),
+                label: String::new(),
+                destination_pubkey,
+                payment_preimage: preimage.as_ref().map(hex).unwrap_or_default(),
+                keysend: true,
+                bolt11: String::new(),
+                open_channel_bolt11: None,
+                ..Default::default()
+            },
+        },
+    }
 }
