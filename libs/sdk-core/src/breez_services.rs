@@ -2379,7 +2379,7 @@ impl BreezServicesBuilder {
         if node_api.is_none() {
             let prototype = true;
             if prototype {
-                let ldk = Arc::new(Ldk::new());
+                let ldk = Arc::new(Ldk::build(self.seed.as_ref().unwrap()));
                 node_api = Some(ldk);
                 backup_transport = Some(Arc::new(VssBackupTransport {}));
             } else {

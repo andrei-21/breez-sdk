@@ -4,30 +4,58 @@ use std::pin::Pin;
 use anyhow::Result;
 use futures::Stream;
 
+use ldk_node::{Builder, Node};
 use sdk_common::prelude::*;
 use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tonic::Streaming;
 
+use crate::bitcoin::secp256k1::Secp256k1;
 use crate::bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
 use crate::lightning_invoice::RawBolt11Invoice;
 use crate::node_api::{CreateInvoiceRequest, FetchBolt11Result, NodeAPI, NodeResult};
 use crate::{models::*, LspInformation};
 use crate::{PrepareRedeemOnchainFundsRequest, PrepareRedeemOnchainFundsResponse};
 
-pub(crate) struct Ldk;
+pub(crate) struct Ldk {
+    node: Node,
+    seed: [u8; 64],
+}
 
 impl Ldk {
-    pub fn new() -> Self {
-        Self {}
+    pub fn build(seed: &[u8]) -> Self {
+        let mut builder = Builder::new();
+
+        let mut bytes = [0u8; 64];
+        bytes.copy_from_slice(&seed);
+        let seed = bytes;
+        builder.set_entropy_seed_bytes(seed.clone());
+
+        builder.set_network(ldk_node::bitcoin::Network::Testnet);
+        builder.set_chain_source_esplora("https://blockstream.info/testnet/api".to_string(), None);
+        builder.set_gossip_source_rgs(
+            "https://rapidsync.lightningdevkit.org/testnet/snapshot".to_string(),
+        );
+        let node = builder.build().unwrap();
+        Self { node, seed }
     }
 }
 
 #[allow(unused_variables)]
 #[tonic::async_trait]
 impl NodeAPI for Ldk {
+    /// Starts the node.
+    async fn start_signer(&self, shutdown: mpsc::Receiver<()>) {
+        self.node.start().unwrap();
+    }
+
+    /// Keeps background tasks running.
+    async fn start_keep_alive(&self, shutdown: watch::Receiver<()>) {
+        println!("start_keep_alive");
+    }
+
     async fn node_credentials(&self) -> NodeResult<Option<NodeCredentials>> {
-        todo!()
+        Ok(None)
     }
 
     async fn configure_node(&self, close_to_address: Option<String>) -> NodeResult<()> {
@@ -48,7 +76,13 @@ impl NodeAPI for Ldk {
         sync_state: Option<Value>,
         match_local_balance: bool,
     ) -> NodeResult<SyncResponse> {
-        todo!()
+        let response = SyncResponse {
+            sync_state: Value::Null,
+            node_state: NodeState::default(),
+            payments: Vec::new(),
+            channels: Vec::new(),
+        };
+        Ok(response)
     }
 
     async fn send_pay(&self, bolt11: String, max_hops: u32) -> NodeResult<PaymentResponse> {
@@ -85,7 +119,7 @@ impl NodeAPI for Ldk {
     }
 
     async fn node_id(&self) -> NodeResult<String> {
-        todo!()
+        Ok(self.node.node_id().to_string())
     }
 
     async fn redeem_onchain_funds(
@@ -100,15 +134,6 @@ impl NodeAPI for Ldk {
         &self,
         req: PrepareRedeemOnchainFundsRequest,
     ) -> NodeResult<PrepareRedeemOnchainFundsResponse> {
-        todo!()
-    }
-
-    /// Starts the signer that listens in a loop until the shutdown signal is received
-    async fn start_signer(&self, shutdown: mpsc::Receiver<()>) {
-        todo!()
-    }
-
-    async fn start_keep_alive(&self, shutdown: watch::Receiver<()>) {
         todo!()
     }
 
@@ -171,11 +196,13 @@ impl NodeAPI for Ldk {
     }
 
     async fn derive_bip32_key(&self, path: Vec<ChildNumber>) -> NodeResult<ExtendedPrivKey> {
-        todo!()
+        let network = sdk_common::prelude::Network::Testnet;
+        Ok(ExtendedPrivKey::new_master(network.into(), &self.seed)?
+            .derive_priv(&Secp256k1::new(), &path)?)
     }
 
     async fn legacy_derive_bip32_key(&self, path: Vec<ChildNumber>) -> NodeResult<ExtendedPrivKey> {
-        todo!()
+        self.derive_bip32_key(path).await
     }
 
     async fn stream_custom_messages(
