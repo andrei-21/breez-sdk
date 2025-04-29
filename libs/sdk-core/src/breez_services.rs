@@ -1848,9 +1848,17 @@ impl BreezServices {
             "#,
             )
             .format(|buf, record| {
+                let style = match record.level() {
+                    log::Level::Error => "\x1b[1m\x1b[31m", // Bold and Red
+                    log::Level::Warn => "\x1b[33m",         // Yellow
+                    log::Level::Info => "\x1b[32m",         // Green
+                    log::Level::Debug => "\x1b[34m",        // Blue
+                    log::Level::Trace => "\x1b[37m",        // White
+                };
+                let reset = "\x1b[0m";
                 writeln!(
                     buf,
-                    "[{} {} {}:{}] {}",
+                    "[{} {style}{}{reset} {}:{}] {}",
                     Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
                     record.level(),
                     record.module_path().unwrap_or("unknown"),

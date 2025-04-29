@@ -815,9 +815,9 @@ checksum = "1628fb46dfa0b37568d12e5edd512553eccf6a22a78e8bde00bb4aed84d5bdbf"
 
 [[package]]
 name = "bytemuck"
-version = "1.22.0"
+version = "1.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6b1fc10dbac614ebc03540c9dbd60e83887fda27794998c6528f1782047d540"
+checksum = "9134a6ef01ce4b366b50689c94f82c14bc72bc5d0386829828a2e2752ef7958c"
 
 [[package]]
 name = "byteorder"
@@ -887,9 +887,9 @@ dependencies = [
 
 [[package]]
 name = "chrono"
-version = "0.4.40"
+version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a7964611d71df112cb1730f2ee67324fcf4d0fc6606acbbe9bfe06df124637c"
+checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
@@ -2423,7 +2423,6 @@ dependencies = [
 [[package]]
 name = "ldk-node"
 version = "0.5.0+git"
-source = "git+https://github.com/andrei-21/ldk-node?branch=prototype#a0bca7a69232641b85884f041924f4770d46b6ed"
 dependencies = [
  "base64 0.22.1",
  "bdk_chain",
@@ -2539,7 +2538,6 @@ dependencies = [
 [[package]]
 name = "lightning"
 version = "0.1.0-beta1"
-source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc21418fc1f60b4b8e59cc0dfd2941689e7418"
 dependencies = [
  "bech32 0.11.0",
  "bitcoin 0.32.5",
@@ -2555,7 +2553,6 @@ dependencies = [
 [[package]]
 name = "lightning-background-processor"
 version = "0.1.0-beta1"
-source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc21418fc1f60b4b8e59cc0dfd2941689e7418"
 dependencies = [
  "bitcoin 0.32.5",
  "bitcoin-io",
@@ -2567,7 +2564,6 @@ dependencies = [
 [[package]]
 name = "lightning-block-sync"
 version = "0.1.0-beta1"
-source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc21418fc1f60b4b8e59cc0dfd2941689e7418"
 dependencies = [
  "bitcoin 0.32.5",
  "chunked_transfer",
@@ -2593,7 +2589,6 @@ dependencies = [
 [[package]]
 name = "lightning-invoice"
 version = "0.33.0-beta1"
-source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc21418fc1f60b4b8e59cc0dfd2941689e7418"
 dependencies = [
  "bech32 0.11.0",
  "bitcoin 0.32.5",
@@ -2604,7 +2599,6 @@ dependencies = [
 [[package]]
 name = "lightning-liquidity"
 version = "0.1.0-alpha.6"
-source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc21418fc1f60b4b8e59cc0dfd2941689e7418"
 dependencies = [
  "bitcoin 0.32.5",
  "chrono",
@@ -2618,7 +2612,6 @@ dependencies = [
 [[package]]
 name = "lightning-macros"
 version = "0.1.0"
-source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc21418fc1f60b4b8e59cc0dfd2941689e7418"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2628,7 +2621,6 @@ dependencies = [
 [[package]]
 name = "lightning-net-tokio"
 version = "0.1.0-beta1"
-source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc21418fc1f60b4b8e59cc0dfd2941689e7418"
 dependencies = [
  "bitcoin 0.32.5",
  "lightning 0.1.0-beta1",
@@ -2638,7 +2630,6 @@ dependencies = [
 [[package]]
 name = "lightning-persister"
 version = "0.1.0-beta1"
-source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc21418fc1f60b4b8e59cc0dfd2941689e7418"
 dependencies = [
  "bitcoin 0.32.5",
  "lightning 0.1.0-beta1",
@@ -2648,7 +2639,6 @@ dependencies = [
 [[package]]
 name = "lightning-rapid-gossip-sync"
 version = "0.1.0-beta1"
-source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc21418fc1f60b4b8e59cc0dfd2941689e7418"
 dependencies = [
  "bitcoin 0.32.5",
  "bitcoin-io",
@@ -2659,7 +2649,6 @@ dependencies = [
 [[package]]
 name = "lightning-transaction-sync"
 version = "0.1.0-beta1"
-source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc21418fc1f60b4b8e59cc0dfd2941689e7418"
 dependencies = [
  "bitcoin 0.32.5",
  "esplora-client",
@@ -2671,7 +2660,6 @@ dependencies = [
 [[package]]
 name = "lightning-types"
 version = "0.2.0-beta1"
-source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc21418fc1f60b4b8e59cc0dfd2941689e7418"
 dependencies = [
  "bitcoin 0.32.5",
 ]
@@ -2769,9 +2757,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniscript"
-version = "12.3.1"
+version = "12.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82911d2fb527bb9aacd2446d2f517aff3f8e3846ace1b3c24258b61ea3cce2bc"
+checksum = "0760e92feaf4ee26bd2e616f557de64712bf1e75f3b1b218dfb475c0a84c7943"
 dependencies = [
  "bech32 0.11.0",
  "bitcoin 0.32.5",
@@ -3374,7 +3362,6 @@ checksum = "350e9b48cbc6b0e028b0473b114454c6316e57336ee184ceab6e53f72c178b3e"
 [[package]]
 name = "possiblyrandom"
 version = "0.2.0"
-source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc21418fc1f60b4b8e59cc0dfd2941689e7418"
 dependencies = [
  "getrandom 0.2.16",
 ]
