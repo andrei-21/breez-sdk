@@ -1,3 +1,24 @@
+# LDK Integration into Breez SDK
+
+## Motivation
+LDK is a comprehensive set of general-purpose libraries that enables the development of Lightning Network-enabled applications. By encapsulating the complexity of the Lightning Network, LDK provides a powerful and flexible interface for builders.
+However, to achieve even basic functionality, developers must still create custom integration code and set up supporting services, such as a block source, rapid gossip sync, and VSS. Moreover, for a fully-fledged application, additional services like LSP, swap services, and fiat on-ramps may be required. This complexity makes it challenging to integrate the Lightning Network into non-Lightning-focused applications, effectively limiting its practical adoption.
+
+## Description
+The goal of this project is to integrate LDK into the Breez SDK with a specific focus on running a Lightning node as an edge node connected to one or more LSPs, which means that the node will not forward payments. This will enable us to make informed decisions and develop services tailored to this use case. In essence, the project aims to narrow the scope of LDK to an edge node while enhancing functionality by leveraging existing Breez infrastructure and services.
+
+The deliverable will be a Rust library featuring a simplified interface that aligns with other Breez SDKs, ensuring consistency and logical similarity. Internally, the library will create and operate a Lightning node using LDK, ensuring trustless and private operations. All necessary services will be set up and preconfigured. Additionally, Breez services such as LSP, swaps, and fiat on-ramps will be integrated.
+The deliverable includes all components necessary for the safe and secure operation of a Lightning node, such as key management and cloud-based node state backup (VSS).
+
+## Potential Impact
+This integration will lower the entry barrier for application developers, making it easier to enable Lightning payments in a trustless, non-custodial manner. It will open Lightning to a broader audience, including projects not specifically focused on Lightning but on their own products, thereby attracting more end users to this sovereign means of payment.
+
+## Prototype
+
+The current prototype version lives in the [`protype` branch](https://github.com/andrei-21/breez-sdk/tree/prototype).
+
+---
+
 # **Breez SDK - Native *(Greenlight Implementation)***
 
 ## **Overview**
