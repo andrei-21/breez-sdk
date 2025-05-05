@@ -113,6 +113,7 @@ pub(crate) async fn handle_command(
             };
             config.breezserver = "http://localhost:8888".to_string();
             config.network = breez_sdk_core::Network::Regtest;
+            config.mempoolspace_url = Some("http://localhost:8999/api".to_string());
 
             connect(ConnectRequest {
                 config,

@@ -305,7 +305,7 @@ impl ChainService for MempoolSpace {
     async fn address_transactions(&self, address: String) -> SdkResult<Vec<OnchainTx>> {
         let (response, _) = get_and_check_success(
             self.rest_client.as_ref(),
-            &format!("{}/address/{address}/txs", self.base_url),
+            &format!("{}/v1/address/{address}/txs", self.base_url),
         )
         .await?;
         Ok(parse_json(&response)?)
@@ -314,7 +314,7 @@ impl ChainService for MempoolSpace {
     async fn current_tip(&self) -> SdkResult<u32> {
         let (response, _) = get_and_check_success(
             self.rest_client.as_ref(),
-            &format!("{}/blocks/tip/height", self.base_url),
+            &format!("{}/v1/blocks/tip/height", self.base_url),
         )
         .await?;
         Ok(parse_json(&response)?)
