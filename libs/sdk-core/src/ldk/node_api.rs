@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -11,6 +11,7 @@ use ldk_node::bitcoin::{Address, FeeRate};
 use ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
+use ldk_node::lightning_types::payment::{PaymentHash, PaymentPreimage};
 use ldk_node::payment::ConfirmationStatus;
 use ldk_node::{Builder, Event, Node, PendingSweepBalance};
 
@@ -34,10 +35,11 @@ pub(crate) struct Ldk {
     seed: [u8; 64],
     node: Arc<Node>,
     invoice_stream: Mutex<Option<mpsc::Receiver<Payment>>>,
+    preimages: Arc<Mutex<HashMap<PaymentHash, PaymentPreimage>>>,
 }
 
 impl Ldk {
-    pub fn build(working_dir: String, seed: &[u8]) -> Self {
+    pub fn build(working_dir: String, seed: &[u8], tracked_preimages: Vec<Vec<u8>>) -> Self {
         let lsp = "0361984fe2a03cc594e97de423bf461096dd26a52e77feda68510377f360e430d4";
         let lsp = PublicKey::from_str(lsp).unwrap();
 
@@ -63,15 +65,25 @@ impl Ldk {
         builder.set_chain_source_esplora("http://localhost:30000".to_string(), None);
         builder.set_gossip_source_rgs("http://localhost:8011".to_string());
         let node = Arc::new(builder.build().unwrap());
+        let preimages = tracked_preimages
+            .into_iter()
+            .map(|p| PaymentPreimage(p.as_slice().try_into().unwrap()))
+            .map(|p| (p.into(), p))
+            .collect();
         Self {
             seed,
             node,
             invoice_stream: Mutex::default(),
+            preimages: Arc::new(Mutex::new(preimages)),
         }
     }
 }
 
-async fn stream_invoices(node: Arc<Node>, tx: mpsc::Sender<Payment>) {
+async fn stream_invoices(
+    node: Arc<Node>,
+    preimages: Arc<Mutex<HashMap<PaymentHash, PaymentPreimage>>>,
+    tx: mpsc::Sender<Payment>,
+) {
     loop {
         let event = node.next_event_async().await;
         info!("Event: {event:?}");
@@ -96,11 +108,28 @@ async fn stream_invoices(node: Arc<Node>, tx: mpsc::Sender<Payment>) {
             }
             Event::PaymentClaimable {
                 payment_id: _,
-                payment_hash: _,
-                claimable_amount_msat: _,
+                payment_hash,
+                claimable_amount_msat,
                 claim_deadline: _,
                 custom_records: _,
-            } => (),
+            } => {
+                match preimages.lock().await.remove(&payment_hash) {
+                    Some(preimage) => {
+                        if let Err(e) = node.bolt11_payment().claim_for_hash(
+                            payment_hash,
+                            claimable_amount_msat,
+                            preimage,
+                        ) {
+                            error!("Failed to claim payment: {e}");
+                        }
+                    }
+                    None => {
+                        if let Err(e) = node.bolt11_payment().fail_for_hash(payment_hash) {
+                            error!("Failed to fail payment: {e}");
+                        }
+                    }
+                };
+            }
             Event::PaymentForwarded { .. } => (),
             Event::ChannelPending {
                 channel_id: _,
@@ -137,8 +166,9 @@ impl NodeAPI for Ldk {
         debug!("LDK Node started");
 
         let node = Arc::clone(&self.node);
+        let preimages = Arc::clone(&self.preimages);
         let (tx, rx) = mpsc::channel(10);
-        tokio::spawn(async move { stream_invoices(node, tx).await });
+        tokio::spawn(async move { stream_invoices(node, preimages, tx).await });
         self.invoice_stream.lock().await.replace(rx);
         debug!("Event handling started");
 
@@ -173,10 +203,18 @@ impl NodeAPI for Ldk {
         let description =
             Bolt11InvoiceDescription::Direct(Description::new(request.description).unwrap());
         let expiry = request.expiry.unwrap_or(3600);
+        let preimage = request
+            .preimage
+            .map(|p| PaymentPreimage(p.as_slice().try_into().unwrap()));
         let payments = self.node.bolt11_payment();
 
-        let result = match request.payer_amount_msat {
-            Some(payer_amount_msat) => {
+        let result = match (request.payer_amount_msat, preimage) {
+            (Some(payer_amount_msat), Some(preimage)) => {
+                let payment_hash = preimage.into();
+                self.preimages.lock().await.insert(payment_hash, preimage);
+                payments.receive_for_hash(payer_amount_msat, &description, expiry, payment_hash)
+            }
+            (Some(payer_amount_msat), None) => {
                 let lsp_fees_msat = payer_amount_msat - request.amount_msat;
                 payments.register_incoming_payment(
                     payer_amount_msat,
@@ -185,7 +223,12 @@ impl NodeAPI for Ldk {
                     expiry,
                 )
             }
-            None => payments.receive(request.amount_msat, &description, expiry),
+            (None, Some(preimage)) => {
+                let payment_hash = preimage.into();
+                self.preimages.lock().await.insert(payment_hash, preimage);
+                payments.receive_for_hash(request.amount_msat, &description, expiry, payment_hash)
+            }
+            (None, None) => payments.receive(request.amount_msat, &description, expiry),
         };
 
         result.map(|i| i.to_string()).map_err(to_node_error)
