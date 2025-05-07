@@ -219,7 +219,14 @@ impl NodeAPI for Ldk {
     }
 
     async fn fetch_bolt11(&self, payment_hash: Vec<u8>) -> NodeResult<Option<FetchBolt11Result>> {
-        todo!()
+        debug!("fetch_bolt11: {payment_hash:?}");
+        let payment = self
+            .node
+            .list_payments_with_filter(|p| p.id.0 == *payment_hash)
+            .into_iter()
+            .next();
+        // TODO: Get bolt11.
+        Ok(None)
     }
 
     async fn pull_changed(
@@ -245,6 +252,7 @@ impl NodeAPI for Ldk {
             .collect();
 
         let channels = self.node.list_channels();
+        let max_receivable_msat = channels.iter().map(|c| c.inbound_capacity_msat).sum();
         let max_receivable_single_payment_amount_msat = channels
             .iter()
             .flat_map(|c| c.inbound_htlc_maximum_msat)
@@ -271,7 +279,7 @@ impl NodeAPI for Ldk {
             pending_onchain_balance_msat: pending_onchain_balance_sats * 1000,
             utxos: Vec::new(),
             max_payable_msat: 0,
-            max_receivable_msat: 0,
+            max_receivable_msat,
             max_single_payment_amount_msat: MAX_PAYMENT_AMOUNT_MSAT,
             //max_chan_reserve_msats: channels_balance - min(max_payable, channels_balance),
             max_chan_reserve_msats: 0,
