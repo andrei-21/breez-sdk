@@ -16,6 +16,7 @@ use ldk_node::payment::ConfirmationStatus;
 use ldk_node::{Builder, Event, Node, PendingSweepBalance};
 
 use core::str::FromStr;
+use rand::Rng;
 use sdk_common::prelude::*;
 use serde_json::Value;
 use tokio::sync::{mpsc, watch, Mutex};
@@ -203,35 +204,20 @@ impl NodeAPI for Ldk {
         let description =
             Bolt11InvoiceDescription::Direct(Description::new(request.description).unwrap());
         let expiry = request.expiry.unwrap_or(3600);
+
         let preimage = request
             .preimage
-            .map(|p| PaymentPreimage(p.as_slice().try_into().unwrap()));
-        let payments = self.node.bolt11_payment();
+            .map(|p| PaymentPreimage(p.as_slice().try_into().unwrap()))
+            // TODO: Reuse LDK mechanism to generate preimages without the need to store them.
+            .unwrap_or_else(|| PaymentPreimage(rand::thread_rng().gen::<[u8; 32]>()));
+        let payment_hash = preimage.into();
+        self.preimages.lock().await.insert(payment_hash, preimage);
 
-        let result = match (request.payer_amount_msat, preimage) {
-            (Some(payer_amount_msat), Some(preimage)) => {
-                let payment_hash = preimage.into();
-                self.preimages.lock().await.insert(payment_hash, preimage);
-                payments.receive_for_hash(payer_amount_msat, &description, expiry, payment_hash)
-            }
-            (Some(payer_amount_msat), None) => {
-                let lsp_fees_msat = payer_amount_msat - request.amount_msat;
-                payments.register_incoming_payment(
-                    payer_amount_msat,
-                    lsp_fees_msat,
-                    &description,
-                    expiry,
-                )
-            }
-            (None, Some(preimage)) => {
-                let payment_hash = preimage.into();
-                self.preimages.lock().await.insert(payment_hash, preimage);
-                payments.receive_for_hash(request.amount_msat, &description, expiry, payment_hash)
-            }
-            (None, None) => payments.receive(request.amount_msat, &description, expiry),
-        };
-
-        result.map(|i| i.to_string()).map_err(to_node_error)
+        self.node
+            .bolt11_payment()
+            .receive_for_hash(request.amount_msat, &description, expiry, payment_hash)
+            .map(|i| i.to_string())
+            .map_err(to_node_error)
     }
 
     async fn delete_invoice(&self, bolt11: String) -> NodeResult<()> {
@@ -295,7 +281,6 @@ impl NodeAPI for Ldk {
             .collect();
 
         let channels = self.node.list_channels();
-        let max_receivable_msat = channels.iter().map(|c| c.inbound_capacity_msat).sum();
         let max_receivable_single_payment_amount_msat = channels
             .iter()
             .flat_map(|c| c.inbound_htlc_maximum_msat)
@@ -322,7 +307,7 @@ impl NodeAPI for Ldk {
             pending_onchain_balance_msat: pending_onchain_balance_sats * 1000,
             utxos: Vec::new(),
             max_payable_msat: 0,
-            max_receivable_msat,
+            max_receivable_msat: MAX_PAYMENT_AMOUNT_MSAT,
             max_single_payment_amount_msat: MAX_PAYMENT_AMOUNT_MSAT,
             //max_chan_reserve_msats: channels_balance - min(max_payable, channels_balance),
             max_chan_reserve_msats: 0,
