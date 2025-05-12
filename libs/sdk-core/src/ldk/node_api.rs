@@ -17,6 +17,9 @@ use ldk_node::{Builder, Event, Node, PendingSweepBalance};
 
 use core::str::FromStr;
 use rand::Rng;
+use sdk_common::bitcoin::hashes::hex::ToHex;
+use sdk_common::bitcoin::hashes::sha256::Hash as Sha256;
+use sdk_common::bitcoin::hashes::Hash;
 use sdk_common::prelude::*;
 use serde_json::Value;
 use tokio::sync::{mpsc, watch, Mutex};
@@ -53,6 +56,7 @@ impl Ldk {
 
         let mut builder = Builder::from_config(config);
 
+        let seed_hash = Sha256::hash(seed).to_hex();
         let mut bytes = [0u8; 64];
         bytes.copy_from_slice(seed);
         let seed = bytes;
@@ -65,15 +69,31 @@ impl Ldk {
         builder.set_network(ldk_node::bitcoin::Network::Regtest);
         builder.set_chain_source_esplora("http://localhost:30000".to_string(), None);
         builder.set_gossip_source_rgs("http://localhost:8011".to_string());
-        let node = Arc::new(builder.build().unwrap());
         let preimages = tracked_preimages
             .into_iter()
             .map(|p| PaymentPreimage(p.as_slice().try_into().unwrap()))
             .map(|p| (p.into(), p))
             .collect();
+
+        debug!("Building LDK Node");
+
+        // The builder creates another tokio runtime inside and can drop it in case of errors.
+        // But dropping runtime is not allowed here:
+        // > Cannot drop a runtime in a context where blocking is not allowed.
+        // > This happens when a runtime is dropped from within an asynchronous context.
+        let node = tokio::task::block_in_place(|| {
+            builder.build_with_vss_store_and_fixed_headers(
+                "http://localhost:3080/vss".to_string(),
+                seed_hash,
+                HashMap::new(),
+            )
+        })
+        .unwrap();
+        info!("LDK Node was built");
+
         Self {
             seed,
-            node,
+            node: Arc::new(node),
             invoice_stream: Mutex::default(),
             preimages: Arc::new(Mutex::new(preimages)),
         }
