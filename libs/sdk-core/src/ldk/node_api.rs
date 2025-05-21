@@ -106,7 +106,13 @@ async fn stream_invoices(
     tx: mpsc::Sender<Payment>,
 ) {
     loop {
-        let event = node.next_event_async().await;
+        let event = tokio::select! {
+            event = node.next_event_async() => event,
+            _ = tx.closed() => {
+                info!("Payments stream got closed, stopping stream_invoices loop");
+                return;
+            },
+        };
         info!("Event: {event:?}");
         match event {
             Event::PaymentReceived { payment_id, .. } => {
