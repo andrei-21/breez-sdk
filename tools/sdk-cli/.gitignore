@@ -3,7 +3,7 @@ history.txt
 phrase
 storage.sql
 sync_storage.sql
-ldk_node_data.sqlite
+instance_id
 config.json
 creds
 

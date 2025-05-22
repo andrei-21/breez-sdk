@@ -1,10 +1,16 @@
+use anyhow::Result;
+use core::str::FromStr;
+use futures::Stream;
+use rand::distributions::Alphanumeric;
+use rand::Rng;
+use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::SystemTime;
-
-use anyhow::Result;
-use futures::Stream;
+use tokio::sync::{mpsc, watch, Mutex};
 
 use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::bitcoin::{Address, FeeRate};
@@ -15,14 +21,10 @@ use ldk_node::lightning_types::payment::{PaymentHash, PaymentPreimage};
 use ldk_node::payment::ConfirmationStatus;
 use ldk_node::{Builder, Event, Node, PendingSweepBalance};
 
-use core::str::FromStr;
-use rand::Rng;
 use sdk_common::bitcoin::hashes::hex::ToHex;
 use sdk_common::bitcoin::hashes::sha256::Hash as Sha256;
 use sdk_common::bitcoin::hashes::Hash;
 use sdk_common::prelude::*;
-use serde_json::Value;
-use tokio::sync::{mpsc, watch, Mutex};
 
 use crate::bitcoin::bech32::ToBase32;
 use crate::bitcoin::secp256k1::ecdsa::RecoverableSignature;
@@ -56,6 +58,17 @@ impl Ldk {
         });
         config.trusted_peers_0conf = vec![lsp];
 
+        let instance_id_filename = Path::new(&working_dir).join("instance_id");
+        let instance_id = fs::read_to_string(instance_id_filename.clone()).unwrap_or_else(|_| {
+            let instance_id: String = rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(8)
+                .map(char::from)
+                .collect();
+            fs::write(&instance_id_filename, &instance_id).unwrap();
+            instance_id
+        });
+
         let mut builder = Builder::from_config(config);
 
         let seed_hash = Sha256::hash(seed).to_hex();
@@ -79,7 +92,7 @@ impl Ldk {
 
         debug!("Building LDK Node");
 
-        let lock = VssLock::new("i9".to_string(), seed_hash.to_string())
+        let lock = VssLock::new(instance_id, seed_hash.to_string())
             .await
             .unwrap();
         let (vss_lock_shutdown_tx, vss_lock_shutdown_rx) = mpsc::channel(1);
