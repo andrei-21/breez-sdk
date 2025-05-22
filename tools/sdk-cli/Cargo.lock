@@ -726,6 +726,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic 0.8.3",
+ "vss-client",
  "zbase32",
 ]
 
@@ -2319,7 +2320,7 @@ dependencies = [
 [[package]]
 name = "ldk-node"
 version = "0.5.0+git"
-source = "git+https://github.com/andrei-21/ldk-node?branch=prototype#51e60cb28545c6b3855bd731ad8c695e7b62a191"
+source = "git+https://github.com/andrei-21/ldk-node?branch=prototype#165d5723d23022393d0c717563f3067555b90163"
 dependencies = [
  "base64 0.22.1",
  "bdk_chain",

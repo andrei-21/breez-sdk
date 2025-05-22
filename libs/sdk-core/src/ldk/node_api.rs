@@ -29,6 +29,7 @@ use crate::bitcoin::secp256k1::ecdsa::RecoverableSignature;
 use crate::bitcoin::secp256k1::Secp256k1;
 use crate::bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
 use crate::ldk::logger::Logger;
+use crate::ldk::vss_lock::{start_refresher, VssLock};
 use crate::lightning::sign::{KeysManager, NodeSigner, Recipient};
 use crate::lightning_invoice::RawBolt11Invoice;
 use crate::node_api::{CreateInvoiceRequest, FetchBolt11Result, NodeAPI, NodeError, NodeResult};
@@ -40,10 +41,11 @@ pub(crate) struct Ldk {
     node: Arc<Node>,
     invoice_stream: Mutex<Option<mpsc::Receiver<Payment>>>,
     preimages: Arc<Mutex<HashMap<PaymentHash, PaymentPreimage>>>,
+    vss_lock_shutdown_tx: mpsc::Sender<()>,
 }
 
 impl Ldk {
-    pub fn build(working_dir: String, seed: &[u8], tracked_preimages: Vec<Vec<u8>>) -> Self {
+    pub async fn build(working_dir: String, seed: &[u8], tracked_preimages: Vec<Vec<u8>>) -> Self {
         let lsp = "0361984fe2a03cc594e97de423bf461096dd26a52e77feda68510377f360e430d4";
         let lsp = PublicKey::from_str(lsp).unwrap();
 
@@ -77,6 +79,12 @@ impl Ldk {
 
         debug!("Building LDK Node");
 
+        let lock = VssLock::new("i9".to_string(), seed_hash.to_string())
+            .await
+            .unwrap();
+        let (vss_lock_shutdown_tx, vss_lock_shutdown_rx) = mpsc::channel(1);
+        start_refresher(lock, vss_lock_shutdown_rx);
+
         // The builder creates another tokio runtime inside and can drop it in case of errors.
         // But dropping runtime is not allowed here:
         // > Cannot drop a runtime in a context where blocking is not allowed.
@@ -96,6 +104,7 @@ impl Ldk {
             node: Arc::new(node),
             invoice_stream: Mutex::default(),
             preimages: Arc::new(Mutex::new(preimages)),
+            vss_lock_shutdown_tx,
         }
     }
 }
@@ -199,17 +208,21 @@ impl NodeAPI for Ldk {
         self.invoice_stream.lock().await.replace(rx);
         debug!("Event handling started");
 
-        let node = Arc::clone(&self.node);
-        let _ = tokio::spawn(async move {
-            let _ = shutdown.recv().await;
-            debug!("Received shutdown signal, stopping node");
-            if let Err(e) = node.stop() {
-                error!("{e}");
+        tokio::select! {
+            _ = shutdown.recv() => {
+                debug!("Received shutdown signal, stopping node");
+                if let Err(e) = self.node.stop() {
+                    error!("{e}");
+                }
+                debug!("Node stopped");
+                let _ = self.vss_lock_shutdown_tx.send(()).await;
+                self.vss_lock_shutdown_tx.closed().await;
+            },
+            _ = self.vss_lock_shutdown_tx.closed() => {
+                info!("Aborting node");
+                std::process::exit(1);
             }
-            debug!("Node stopped");
-        })
-        .await;
-        debug!("Node started");
+        };
     }
 
     /// Keeps background tasks running.
