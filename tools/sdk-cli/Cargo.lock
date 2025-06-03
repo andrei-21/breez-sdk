@@ -690,6 +690,7 @@ version = "0.6.2"
 dependencies = [
  "aes 0.8.2",
  "anyhow",
+ "async-trait",
  "base64 0.13.1",
  "chrono",
  "const_format",

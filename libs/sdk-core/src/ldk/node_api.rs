@@ -1,25 +1,30 @@
 use anyhow::Result;
 use core::str::FromStr;
 use futures::Stream;
+use ldk_node::bitcoin::secp256k1::PublicKey;
+use ldk_node::bitcoin::{Address, FeeRate};
+use ldk_node::lightning::ln::channelmanager::PaymentId;
+use ldk_node::lightning::ln::msgs::SocketAddress;
+use ldk_node::lightning::util::persist::KVStore;
+use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
+use ldk_node::lightning_types::payment::{PaymentHash, PaymentPreimage};
+use ldk_node::payment::ConfirmationStatus;
+use ldk_node::{Builder, Event, Node, PendingSweepBalance};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
+use rusqlite::Connection;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::SystemTime;
 use tokio::sync::{mpsc, watch, Mutex};
-
-use ldk_node::bitcoin::secp256k1::PublicKey;
-use ldk_node::bitcoin::{Address, FeeRate};
-use ldk_node::lightning::ln::channelmanager::PaymentId;
-use ldk_node::lightning::ln::msgs::SocketAddress;
-use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
-use ldk_node::lightning_types::payment::{PaymentHash, PaymentPreimage};
-use ldk_node::payment::ConfirmationStatus;
-use ldk_node::{Builder, Event, Node, PendingSweepBalance};
+use vss_client::client::VssClient;
+use vss_client::error::VssError;
+use vss_client::util::retry::{ExponentialBackoffRetryPolicy, RetryPolicy};
 
 use sdk_common::bitcoin::hashes::hex::ToHex;
 use sdk_common::bitcoin::hashes::sha256::Hash as Sha256;
@@ -30,8 +35,10 @@ use crate::bitcoin::bech32::ToBase32;
 use crate::bitcoin::secp256k1::ecdsa::RecoverableSignature;
 use crate::bitcoin::secp256k1::Secp256k1;
 use crate::bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
+use crate::ldk::locking_store::LockingStore;
 use crate::ldk::logger::Logger;
-use crate::ldk::vss_lock::{start_refresher, VssLock};
+use crate::ldk::mirroring_store::MirroringStore;
+use crate::ldk::vss_store::VssStore;
 use crate::lightning::sign::{KeysManager, NodeSigner, Recipient};
 use crate::lightning_invoice::RawBolt11Invoice;
 use crate::node_api::{CreateInvoiceRequest, FetchBolt11Result, NodeAPI, NodeError, NodeResult};
@@ -43,7 +50,7 @@ pub(crate) struct Ldk {
     node: Arc<Node>,
     invoice_stream: Mutex<Option<mpsc::Receiver<Payment>>>,
     preimages: Arc<Mutex<HashMap<PaymentHash, PaymentPreimage>>>,
-    vss_lock_shutdown_tx: mpsc::Sender<()>,
+    remote_lock_shutdown_tx: mpsc::Sender<()>,
 }
 
 impl Ldk {
@@ -77,7 +84,7 @@ impl Ldk {
         let seed = bytes;
         builder.set_entropy_seed_bytes(seed);
         builder.set_custom_logger(Arc::new(Logger {}));
-        builder.set_storage_dir_path(working_dir);
+        builder.set_storage_dir_path(working_dir.clone());
 
         // builder.set_chain_source_esplora("https://blockstream.info/api".to_string(), None);
         // builder.set_gossip_source_rgs("https://rapidsync.lightningdevkit.org/snapshot".to_string());
@@ -92,24 +99,47 @@ impl Ldk {
 
         debug!("Building LDK Node");
 
-        let lock = VssLock::new(instance_id, seed_hash.to_string())
+        let vss_client = VssClient::new(
+            "http://localhost:3080/vss".to_string(),
+            ExponentialBackoffRetryPolicy::<VssError>::new(Duration::from_secs(1))
+                .with_max_attempts(2),
+        );
+        let vss_store = VssStore::new(vss_client, seed_hash);
+        let locking_store = LockingStore::new(instance_id, vss_store).await.unwrap();
+        let locking_store = Arc::new(locking_store);
+
+        let ls = Arc::clone(&locking_store);
+        let (remote_lock_shutdown_tx, mut remote_lock_shutdown_rx) = mpsc::channel(1);
+        tokio::task::spawn(async move {
+            while let Ok(until) = ls.refresh_lock().await {
+                tokio::select! {
+                    _ = tokio::time::sleep_until(until) => (),
+                    _ = remote_lock_shutdown_rx.recv() => {
+                        match ls.unlock().await {
+                            Ok(()) => info!("Remote lock was released"),
+                            Err(e) => error!("Failed to release remote lock: {e}"),
+                        };
+                        break;
+                    }
+                };
+            }
+            // Explicitly drop the receiver to let the sender know we are done with releasing the lock.
+            drop(remote_lock_shutdown_rx);
+        });
+
+        let store_filename = Path::new(&working_dir).join("ldk_node_storage.sql");
+        let conn = Connection::open(store_filename).unwrap();
+        let store = MirroringStore::new(tokio::runtime::Handle::current(), conn, locking_store)
             .await
             .unwrap();
-        let (vss_lock_shutdown_tx, vss_lock_shutdown_rx) = mpsc::channel(1);
-        start_refresher(lock, vss_lock_shutdown_rx);
+        let store: Arc<dyn KVStore + Sync + Send> = Arc::new(store);
 
         // The builder creates another tokio runtime inside and can drop it in case of errors.
         // But dropping runtime is not allowed here:
         // > Cannot drop a runtime in a context where blocking is not allowed.
         // > This happens when a runtime is dropped from within an asynchronous context.
-        let node = tokio::task::block_in_place(|| {
-            builder.build_with_vss_store_and_fixed_headers(
-                "http://localhost:3080/vss".to_string(),
-                seed_hash,
-                HashMap::new(),
-            )
-        })
-        .unwrap();
+        let node =
+            tokio::task::block_in_place(|| builder.build_with_store(Arc::clone(&store))).unwrap();
         info!("LDK Node was built");
 
         Self {
@@ -117,7 +147,7 @@ impl Ldk {
             node: Arc::new(node),
             invoice_stream: Mutex::default(),
             preimages: Arc::new(Mutex::new(preimages)),
-            vss_lock_shutdown_tx,
+            remote_lock_shutdown_tx,
         }
     }
 }
@@ -228,10 +258,10 @@ impl NodeAPI for Ldk {
                     error!("{e}");
                 }
                 debug!("Node stopped");
-                let _ = self.vss_lock_shutdown_tx.send(()).await;
-                self.vss_lock_shutdown_tx.closed().await;
+                let _ = self.remote_lock_shutdown_tx.send(()).await;
+                self.remote_lock_shutdown_tx.closed().await;
             },
-            _ = self.vss_lock_shutdown_tx.closed() => {
+            _ = self.remote_lock_shutdown_tx.closed() => {
                 info!("Aborting node");
                 std::process::exit(1);
             }

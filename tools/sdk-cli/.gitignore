@@ -3,6 +3,7 @@ history.txt
 phrase
 storage.sql
 sync_storage.sql
+ldk_node_storage.sql
 instance_id
 config.json
 creds

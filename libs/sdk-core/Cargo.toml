@@ -63,6 +63,7 @@ ryu = "1.0.18"
 ldk-node = { git = "https://github.com/andrei-21/ldk-node", branch = "prototype" }
 # ldk-node = { path = "../../../../ldk/ldk-node" }
 vss-client = { version = "0.3.1", default-features = false }
+async-trait = "0.1.77"
 
 [dev-dependencies]
 mockall = "0.13.1"
