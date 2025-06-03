@@ -171,12 +171,16 @@ pub struct BreezServices {
     event_listener: Option<Box<dyn EventListener>>,
     backup_watcher: Arc<BackupWatcher>,
     shutdown_sender: watch::Sender<()>,
-    shutdown_receiver: watch::Receiver<()>,
 }
 
 impl BreezServices {
     /// `connect` initializes the SDK services, schedules the node to run in the cloud and
     /// runs the signer. This must be called in order to start communicating with the node.
+    ///
+    /// Once you are finished using the SDK services, call [BreezServices::disconnect] to
+    /// free up the resources which are currently in use. This is especially useful in cases
+    /// where the SDK has to be re-instantiated, for example, when you need to change the
+    /// mnemonic and/or configuration.
     ///
     /// # Arguments
     ///
@@ -247,6 +251,7 @@ impl BreezServices {
             .map_err(|e| SdkError::Generic {
                 err: format!("Shutdown failed: {e}"),
             })?;
+        self.shutdown_sender.closed().await;
         *started = false;
         Ok(())
     }
@@ -1460,7 +1465,7 @@ impl BreezServices {
         // start the signer
         let (shutdown_signer_sender, signer_signer_receiver) = watch::channel(());
         self.start_signer(signer_signer_receiver).await;
-        self.start_node_keep_alive(self.shutdown_receiver.clone())
+        self.start_node_keep_alive(self.shutdown_sender.subscribe())
             .await;
 
         // Sync node state
@@ -1496,7 +1501,7 @@ impl BreezServices {
         self.track_logs().await;
 
         // Stop signer on shutdown
-        let mut shutdown_receiver = self.shutdown_receiver.clone();
+        let mut shutdown_receiver = self.shutdown_sender.subscribe();
         tokio::spawn(async move {
             _ = shutdown_receiver.changed().await;
             _ = shutdown_signer_sender.send(());
@@ -1547,7 +1552,7 @@ impl BreezServices {
 
     async fn start_backup_watcher(self: &Arc<BreezServices>) -> Result<()> {
         self.backup_watcher
-            .start(self.shutdown_receiver.clone())
+            .start(self.shutdown_sender.subscribe())
             .await
             .map_err(|e| anyhow!("Failed to start backup watcher: {e}"))?;
 
@@ -1567,7 +1572,7 @@ impl BreezServices {
         let cloned = self.clone();
         tokio::spawn(async move {
             let mut events_stream = cloned.backup_watcher.subscribe_events();
-            let mut shutdown_receiver = cloned.shutdown_receiver.clone();
+            let mut shutdown_receiver = cloned.shutdown_sender.subscribe();
             loop {
                 tokio::select! {
                     backup_event = events_stream.recv() => {
@@ -1593,7 +1598,7 @@ impl BreezServices {
         tokio::spawn(async move {
             let mut swap_events_stream = cloned.btc_receive_swapper.subscribe_status_changes();
             let mut rev_swap_events_stream = cloned.btc_send_swapper.subscribe_status_changes();
-            let mut shutdown_receiver = cloned.shutdown_receiver.clone();
+            let mut shutdown_receiver = cloned.shutdown_sender.subscribe();
             loop {
                 tokio::select! {
                     swap_event = swap_events_stream.recv() => {
@@ -1622,7 +1627,7 @@ impl BreezServices {
     async fn track_invoices(self: &Arc<BreezServices>) {
         let cloned = self.clone();
         tokio::spawn(async move {
-            let mut shutdown_receiver = cloned.shutdown_receiver.clone();
+            let mut shutdown_receiver = cloned.shutdown_sender.subscribe();
             loop {
                 if shutdown_receiver.has_changed().unwrap_or(true) {
                     return;
@@ -1631,8 +1636,15 @@ impl BreezServices {
                     Ok(invoice_stream) => invoice_stream,
                     Err(e) => {
                         warn!("stream incoming payments returned error: {:?}", e);
-                        sleep(Duration::from_secs(1)).await;
-                        continue;
+                        tokio::select! {
+                            _ = sleep(Duration::from_secs(1)) => {
+                                continue
+                            }
+                            _ = shutdown_receiver.changed() => {
+                                debug!("Invoice tracking task has completed");
+                                return;
+                            }
+                        };
                     }
                 };
 
@@ -1686,7 +1698,16 @@ impl BreezServices {
                         error!("failed to sync after paid invoice: {:?}", e);
                     }
                 }
-                sleep(Duration::from_secs(1)).await;
+
+                tokio::select! {
+                    _ = sleep(Duration::from_secs(1)) => {
+                        continue
+                    }
+                    _ = shutdown_receiver.changed() => {
+                        debug!("Invoice tracking task has completed");
+                        return;
+                    }
+                };
             }
         });
     }
@@ -1694,7 +1715,7 @@ impl BreezServices {
     async fn track_logs(self: &Arc<BreezServices>) {
         let cloned = self.clone();
         tokio::spawn(async move {
-            let mut shutdown_receiver = cloned.shutdown_receiver.clone();
+            let mut shutdown_receiver = cloned.shutdown_sender.subscribe();
             loop {
                 if shutdown_receiver.has_changed().unwrap_or(true) {
                     return;
@@ -1703,8 +1724,15 @@ impl BreezServices {
                     Ok(log_stream) => log_stream,
                     Err(e) => {
                         warn!("stream log messages returned error: {:?}", e);
-                        sleep(Duration::from_secs(1)).await;
-                        continue;
+                        tokio::select! {
+                            _ = sleep(Duration::from_secs(1)) => {
+                                continue
+                            }
+                            _ = shutdown_receiver.changed() => {
+                                debug!("Invoice tracking task has completed");
+                                return;
+                            }
+                        };
                     }
                 };
 
@@ -1729,7 +1757,15 @@ impl BreezServices {
                     };
                 }
 
-                sleep(Duration::from_secs(1)).await;
+                tokio::select! {
+                    _ = sleep(Duration::from_secs(1)) => {
+                        continue
+                    }
+                    _ = shutdown_receiver.changed() => {
+                        debug!("Invoice tracking task has completed");
+                        return;
+                    }
+                };
             }
         });
     }
@@ -1738,7 +1774,7 @@ impl BreezServices {
         let cloned = self.clone();
         tokio::spawn(async move {
             let mut current_block: u32 = 0;
-            let mut shutdown_receiver = cloned.shutdown_receiver.clone();
+            let mut shutdown_receiver = cloned.shutdown_sender.subscribe();
             let mut interval = tokio::time::interval(Duration::from_secs(30));
             interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
             loop {
@@ -2535,7 +2571,7 @@ impl BreezServicesBuilder {
         ));
 
         // create a shutdown channel (sender and receiver)
-        let (shutdown_sender, shutdown_receiver) = watch::channel::<()>(());
+        let (shutdown_sender, _shutdown_receiver) = watch::channel::<()>(());
 
         let buy_bitcoin_api = self
             .buy_bitcoin_api
@@ -2566,7 +2602,6 @@ impl BreezServicesBuilder {
             event_listener,
             backup_watcher: Arc::new(backup_watcher),
             shutdown_sender,
-            shutdown_receiver,
         });
 
         Ok(breez_services)
