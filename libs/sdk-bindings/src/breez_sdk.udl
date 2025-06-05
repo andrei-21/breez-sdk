@@ -177,6 +177,27 @@ dictionary LNInvoice {
     u64 min_final_cltv_expiry_delta;
 };
 
+[Enum]
+interface Amount {
+    Bitcoin(u64 amount_msat);
+    Currency(string iso4217_code, u64 fractional_amount);
+};
+
+dictionary LnOfferBlindedPath {
+    sequence<string> blinded_hops;
+};
+
+dictionary LNOffer {
+    string offer;
+    sequence<string> chains;
+    sequence<LnOfferBlindedPath> paths;
+    string? description;
+    string? signing_pubkey;
+    Amount? min_amount;
+    u64? absolute_expiry;
+    string? issuer;
+};
+
 dictionary UnspentTransactionOutput {
     sequence<u8> txid;
     u32 outnum;
@@ -741,10 +762,22 @@ dictionary RecommendedFees {
     u64 minimum_fee;
 };
 
+dictionary LiquidAddressData {
+    string address;
+    Network network;
+    string? asset_id;
+    f64? amount;
+    u64? amount_sat;
+    string? label;
+    string? message;
+};
+
 [Enum]
 interface InputType {
     BitcoinAddress(BitcoinAddressData address);
+    LiquidAddress(LiquidAddressData address);
     Bolt11(LNInvoice invoice);
+    Bolt12Offer(LNOffer offer, string? bip353_address);
     NodeId(string node_id);
     Url(string url);
     LnUrlPay(LnUrlPayRequestData data, string? bip353_address);

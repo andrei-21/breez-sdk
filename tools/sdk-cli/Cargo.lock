@@ -1213,6 +1213,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
 
 [[package]]
+name = "elements"
+version = "0.25.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81b2569d3495bfdfce36c504fd4d78752ff4a7699f8a33e6f3ee523bddf9f6ad"
+dependencies = [
+ "bech32 0.11.0",
+ "bitcoin 0.32.5",
+ "secp256k1-zkp",
+ "serde_json",
+]
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2342,7 +2354,7 @@ dependencies = [
  "lightning-persister",
  "lightning-rapid-gossip-sync",
  "lightning-transaction-sync",
- "lightning-types",
+ "lightning-types 0.2.0-beta1",
  "log",
  "prost 0.11.9",
  "rand",
@@ -2445,9 +2457,25 @@ dependencies = [
  "hashbrown 0.13.2",
  "libm",
  "lightning-invoice 0.33.0-beta1",
- "lightning-types",
+ "lightning-types 0.2.0-beta1",
  "musig2",
- "possiblyrandom",
+ "possiblyrandom 0.2.0 (git+https://github.com/andrei-21/rust-lightning?branch=prototype)",
+]
+
+[[package]]
+name = "lightning"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5273f7cd497b49415c540fada281ab58838c4c409474712064eaaf0aec1b557"
+dependencies = [
+ "bech32 0.11.0",
+ "bitcoin 0.32.5",
+ "dnssec-prover",
+ "hashbrown 0.13.2",
+ "libm",
+ "lightning-invoice 0.33.2",
+ "lightning-types 0.2.0",
+ "possiblyrandom 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -2495,8 +2523,19 @@ source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc2
 dependencies = [
  "bech32 0.11.0",
  "bitcoin 0.32.5",
- "lightning-types",
+ "lightning-types 0.2.0-beta1",
  "serde",
+]
+
+[[package]]
+name = "lightning-invoice"
+version = "0.33.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11209f386879b97198b2bfc9e9c1e5d42870825c6bd4376f17f95357244d6600"
+dependencies = [
+ "bech32 0.11.0",
+ "bitcoin 0.32.5",
+ "lightning-types 0.2.0",
 ]
 
 [[package]]
@@ -2508,7 +2547,7 @@ dependencies = [
  "chrono",
  "lightning 0.1.0-beta1",
  "lightning-invoice 0.33.0-beta1",
- "lightning-types",
+ "lightning-types 0.2.0-beta1",
  "serde",
  "serde_json",
 ]
@@ -2570,6 +2609,15 @@ dependencies = [
 name = "lightning-types"
 version = "0.2.0-beta1"
 source = "git+https://github.com/andrei-21/rust-lightning?branch=prototype#02fc21418fc1f60b4b8e59cc0dfd2941689e7418"
+dependencies = [
+ "bitcoin 0.32.5",
+]
+
+[[package]]
+name = "lightning-types"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2cd84d4e71472035903e43caded8ecc123066ce466329ccd5ae537a8d5488c7"
 dependencies = [
  "bitcoin 0.32.5",
 ]
@@ -3242,6 +3290,15 @@ dependencies = [
  "cpufeatures",
  "opaque-debug",
  "universal-hash 0.5.1",
+]
+
+[[package]]
+name = "possiblyrandom"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b122a615d72104fb3d8b26523fdf9232cd8ee06949fb37e4ce3ff964d15dffd"
+dependencies = [
+ "getrandom",
 ]
 
 [[package]]
@@ -3973,11 +4030,13 @@ dependencies = [
  "bitcoin 0.29.2",
  "cbc",
  "dns-parser",
+ "elements",
  "getrandom",
  "hex",
  "hickory-resolver",
  "lazy_static",
  "lightning 0.0.118",
+ "lightning 0.1.4",
  "lightning-invoice 0.26.0",
  "log",
  "maybe-sync",
@@ -4099,6 +4158,28 @@ version = "0.11.0"
 source = "git+https://github.com/rust-bitcoin/rust-secp256k1?rev=1cc7410df436b73d06db3c8ff7cbb29a78916b06#1cc7410df436b73d06db3c8ff7cbb29a78916b06"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "secp256k1-zkp"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52a44aed3002b5ae975f8624c5df3a949cfbf00479e18778b6058fcd213b76e3"
+dependencies = [
+ "bitcoin-private",
+ "rand",
+ "secp256k1 0.29.1",
+ "secp256k1-zkp-sys",
+]
+
+[[package]]
+name = "secp256k1-zkp-sys"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57f08b2d0b143a22e07f798ae4f0ab20d5590d7c68e0d090f2088a48a21d1654"
+dependencies = [
+ "cc",
+ "secp256k1-sys 0.10.1",
 ]
 
 [[package]]

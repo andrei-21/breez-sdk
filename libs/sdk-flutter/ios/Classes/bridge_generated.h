@@ -40,8 +40,13 @@ typedef struct wire_NodeConfig_Greenlight {
   struct wire_GreenlightNodeConfig *config;
 } wire_NodeConfig_Greenlight;
 
+typedef struct wire_NodeConfig_Ldk {
+
+} wire_NodeConfig_Ldk;
+
 typedef union NodeConfigKind {
   struct wire_NodeConfig_Greenlight *Greenlight;
+  struct wire_NodeConfig_Ldk *Ldk;
 } NodeConfigKind;
 
 typedef struct wire_NodeConfig {

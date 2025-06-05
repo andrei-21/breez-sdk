@@ -889,6 +889,9 @@ pub struct mirror_AesSuccessActionDataDecrypted(AesSuccessActionDataDecrypted);
 pub struct mirror_AesSuccessActionDataResult(AesSuccessActionDataResult);
 
 #[derive(Clone)]
+pub struct mirror_Amount(Amount);
+
+#[derive(Clone)]
 pub struct mirror_BitcoinAddressData(BitcoinAddressData);
 
 #[derive(Clone)]
@@ -901,7 +904,16 @@ pub struct mirror_FiatCurrency(FiatCurrency);
 pub struct mirror_InputType(InputType);
 
 #[derive(Clone)]
+pub struct mirror_LiquidAddressData(LiquidAddressData);
+
+#[derive(Clone)]
 pub struct mirror_LNInvoice(LNInvoice);
+
+#[derive(Clone)]
+pub struct mirror_LNOffer(LNOffer);
+
+#[derive(Clone)]
+pub struct mirror_LnOfferBlindedPath(LnOfferBlindedPath);
 
 #[derive(Clone)]
 pub struct mirror_LnUrlAuthRequestData(LnUrlAuthRequestData);
@@ -973,6 +985,18 @@ const _: fn() = || {
             let _: String = reason;
         }
     }
+    match None::<Amount>.unwrap() {
+        Amount::Bitcoin { amount_msat } => {
+            let _: u64 = amount_msat;
+        }
+        Amount::Currency {
+            iso4217_code,
+            fractional_amount,
+        } => {
+            let _: String = iso4217_code;
+            let _: u64 = fractional_amount;
+        }
+    }
     {
         let BitcoinAddressData = None::<BitcoinAddressData>.unwrap();
         let _: String = BitcoinAddressData.address;
@@ -1000,8 +1024,18 @@ const _: fn() = || {
         InputType::BitcoinAddress { address } => {
             let _: BitcoinAddressData = address;
         }
+        InputType::LiquidAddress { address } => {
+            let _: LiquidAddressData = address;
+        }
         InputType::Bolt11 { invoice } => {
             let _: LNInvoice = invoice;
+        }
+        InputType::Bolt12Offer {
+            offer,
+            bip353_address,
+        } => {
+            let _: LNOffer = offer;
+            let _: Option<String> = bip353_address;
         }
         InputType::NodeId { node_id } => {
             let _: String = node_id;
@@ -1027,6 +1061,16 @@ const _: fn() = || {
         }
     }
     {
+        let LiquidAddressData = None::<LiquidAddressData>.unwrap();
+        let _: String = LiquidAddressData.address;
+        let _: Network = LiquidAddressData.network;
+        let _: Option<String> = LiquidAddressData.asset_id;
+        let _: Option<f64> = LiquidAddressData.amount;
+        let _: Option<u64> = LiquidAddressData.amount_sat;
+        let _: Option<String> = LiquidAddressData.label;
+        let _: Option<String> = LiquidAddressData.message;
+    }
+    {
         let LNInvoice = None::<LNInvoice>.unwrap();
         let _: String = LNInvoice.bolt11;
         let _: Network = LNInvoice.network;
@@ -1040,6 +1084,21 @@ const _: fn() = || {
         let _: Vec<RouteHint> = LNInvoice.routing_hints;
         let _: Vec<u8> = LNInvoice.payment_secret;
         let _: u64 = LNInvoice.min_final_cltv_expiry_delta;
+    }
+    {
+        let LNOffer = None::<LNOffer>.unwrap();
+        let _: String = LNOffer.offer;
+        let _: Vec<String> = LNOffer.chains;
+        let _: Option<Amount> = LNOffer.min_amount;
+        let _: Option<String> = LNOffer.description;
+        let _: Option<u64> = LNOffer.absolute_expiry;
+        let _: Option<String> = LNOffer.issuer;
+        let _: Option<String> = LNOffer.signing_pubkey;
+        let _: Vec<LnOfferBlindedPath> = LNOffer.paths;
+    }
+    {
+        let LnOfferBlindedPath = None::<LnOfferBlindedPath>.unwrap();
+        let _: Vec<String> = LnOfferBlindedPath.blinded_hops;
     }
     {
         let LnUrlAuthRequestData = None::<LnUrlAuthRequestData>.unwrap();
@@ -1329,6 +1388,31 @@ impl rust2dart::IntoIntoDart<mirror_AesSuccessActionDataResult> for AesSuccessAc
     }
 }
 
+impl support::IntoDart for mirror_Amount {
+    fn into_dart(self) -> support::DartAbi {
+        match self.0 {
+            Amount::Bitcoin { amount_msat } => {
+                vec![0.into_dart(), amount_msat.into_into_dart().into_dart()]
+            }
+            Amount::Currency {
+                iso4217_code,
+                fractional_amount,
+            } => vec![
+                1.into_dart(),
+                iso4217_code.into_into_dart().into_dart(),
+                fractional_amount.into_into_dart().into_dart(),
+            ],
+        }
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_Amount {}
+impl rust2dart::IntoIntoDart<mirror_Amount> for Amount {
+    fn into_into_dart(self) -> mirror_Amount {
+        mirror_Amount(self)
+    }
+}
+
 impl support::IntoDart for BackupFailedData {
     fn into_dart(self) -> support::DartAbi {
         vec![self.error.into_into_dart().into_dart()].into_dart()
@@ -1605,27 +1689,38 @@ impl support::IntoDart for mirror_InputType {
             InputType::BitcoinAddress { address } => {
                 vec![0.into_dart(), address.into_into_dart().into_dart()]
             }
+            InputType::LiquidAddress { address } => {
+                vec![1.into_dart(), address.into_into_dart().into_dart()]
+            }
             InputType::Bolt11 { invoice } => {
-                vec![1.into_dart(), invoice.into_into_dart().into_dart()]
+                vec![2.into_dart(), invoice.into_into_dart().into_dart()]
             }
+            InputType::Bolt12Offer {
+                offer,
+                bip353_address,
+            } => vec![
+                3.into_dart(),
+                offer.into_into_dart().into_dart(),
+                bip353_address.into_dart(),
+            ],
             InputType::NodeId { node_id } => {
-                vec![2.into_dart(), node_id.into_into_dart().into_dart()]
+                vec![4.into_dart(), node_id.into_into_dart().into_dart()]
             }
-            InputType::Url { url } => vec![3.into_dart(), url.into_into_dart().into_dart()],
+            InputType::Url { url } => vec![5.into_dart(), url.into_into_dart().into_dart()],
             InputType::LnUrlPay {
                 data,
                 bip353_address,
             } => vec![
-                4.into_dart(),
+                6.into_dart(),
                 data.into_into_dart().into_dart(),
                 bip353_address.into_dart(),
             ],
             InputType::LnUrlWithdraw { data } => {
-                vec![5.into_dart(), data.into_into_dart().into_dart()]
-            }
-            InputType::LnUrlAuth { data } => vec![6.into_dart(), data.into_into_dart().into_dart()],
-            InputType::LnUrlError { data } => {
                 vec![7.into_dart(), data.into_into_dart().into_dart()]
+            }
+            InputType::LnUrlAuth { data } => vec![8.into_dart(), data.into_into_dart().into_dart()],
+            InputType::LnUrlError { data } => {
+                vec![9.into_dart(), data.into_into_dart().into_dart()]
             }
         }
         .into_dart()
@@ -1655,6 +1750,27 @@ impl rust2dart::IntoIntoDart<InvoicePaidDetails> for InvoicePaidDetails {
     }
 }
 
+impl support::IntoDart for mirror_LiquidAddressData {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.0.address.into_into_dart().into_dart(),
+            self.0.network.into_into_dart().into_dart(),
+            self.0.asset_id.into_dart(),
+            self.0.amount.into_dart(),
+            self.0.amount_sat.into_dart(),
+            self.0.label.into_dart(),
+            self.0.message.into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_LiquidAddressData {}
+impl rust2dart::IntoIntoDart<mirror_LiquidAddressData> for LiquidAddressData {
+    fn into_into_dart(self) -> mirror_LiquidAddressData {
+        mirror_LiquidAddressData(self)
+    }
+}
+
 impl support::IntoDart for mirror_LNInvoice {
     fn into_dart(self) -> support::DartAbi {
         vec![
@@ -1681,6 +1797,40 @@ impl support::IntoDartExceptPrimitive for mirror_LNInvoice {}
 impl rust2dart::IntoIntoDart<mirror_LNInvoice> for LNInvoice {
     fn into_into_dart(self) -> mirror_LNInvoice {
         mirror_LNInvoice(self)
+    }
+}
+
+impl support::IntoDart for mirror_LNOffer {
+    fn into_dart(self) -> support::DartAbi {
+        vec![
+            self.0.offer.into_into_dart().into_dart(),
+            self.0.chains.into_into_dart().into_dart(),
+            self.0.min_amount.map(|v| mirror_Amount(v)).into_dart(),
+            self.0.description.into_dart(),
+            self.0.absolute_expiry.into_dart(),
+            self.0.issuer.into_dart(),
+            self.0.signing_pubkey.into_dart(),
+            self.0.paths.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_LNOffer {}
+impl rust2dart::IntoIntoDart<mirror_LNOffer> for LNOffer {
+    fn into_into_dart(self) -> mirror_LNOffer {
+        mirror_LNOffer(self)
+    }
+}
+
+impl support::IntoDart for mirror_LnOfferBlindedPath {
+    fn into_dart(self) -> support::DartAbi {
+        vec![self.0.blinded_hops.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for mirror_LnOfferBlindedPath {}
+impl rust2dart::IntoIntoDart<mirror_LnOfferBlindedPath> for LnOfferBlindedPath {
+    fn into_into_dart(self) -> mirror_LnOfferBlindedPath {
+        mirror_LnOfferBlindedPath(self)
     }
 }
 

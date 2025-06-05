@@ -19,12 +19,13 @@ use log::{Level, LevelFilter, Metadata, Record};
 use once_cell::sync::{Lazy, OnceCell};
 use sdk_common::invoice;
 pub use sdk_common::prelude::{
-    parse, AesSuccessActionDataDecrypted, AesSuccessActionDataResult, BitcoinAddressData,
-    CurrencyInfo, FiatCurrency, InputType, LNInvoice, LnUrlAuthRequestData, LnUrlCallbackStatus,
-    LnUrlError, LnUrlErrorData, LnUrlPayErrorData, LnUrlPayRequest, LnUrlPayRequestData,
-    LnUrlWithdrawRequest, LnUrlWithdrawRequestData, LnUrlWithdrawResult, LnUrlWithdrawSuccessData,
-    LocaleOverrides, LocalizedName, MessageSuccessActionData, Network, Rate, RouteHint,
-    RouteHintHop, SuccessActionProcessed, Symbol, UrlSuccessActionData,
+    parse, AesSuccessActionDataDecrypted, AesSuccessActionDataResult, Amount, BitcoinAddressData,
+    CurrencyInfo, FiatCurrency, InputType, LNInvoice, LNOffer, LiquidAddressData,
+    LnOfferBlindedPath, LnUrlAuthRequestData, LnUrlCallbackStatus, LnUrlError, LnUrlErrorData,
+    LnUrlPayErrorData, LnUrlPayRequest, LnUrlPayRequestData, LnUrlWithdrawRequest,
+    LnUrlWithdrawRequestData, LnUrlWithdrawResult, LnUrlWithdrawSuccessData, LocaleOverrides,
+    LocalizedName, MessageSuccessActionData, Network, Rate, RouteHint, RouteHintHop,
+    SuccessActionProcessed, Symbol, UrlSuccessActionData,
 };
 use tokio::sync::Mutex;
 
@@ -103,6 +104,45 @@ pub struct _LNInvoice {
     pub min_final_cltv_expiry_delta: u64,
 }
 
+#[frb(mirror(LiquidAddressData))]
+pub struct _LiquidAddressData {
+    pub address: String,
+    pub network: Network,
+    pub asset_id: Option<String>,
+    pub amount: Option<f64>,
+    pub amount_sat: Option<u64>,
+    pub label: Option<String>,
+    pub message: Option<String>,
+}
+
+#[frb(mirror(Amount))]
+pub enum _Amount {
+    Bitcoin {
+        amount_msat: u64,
+    },
+    Currency {
+        iso4217_code: String,
+        fractional_amount: u64,
+    },
+}
+
+#[frb(mirror(LnOfferBlindedPath))]
+pub struct _LnOfferBlindedPath {
+    pub blinded_hops: Vec<String>,
+}
+
+#[frb(mirror(LNOffer))]
+pub struct _LNOffer {
+    pub offer: String,
+    pub chains: Vec<String>,
+    pub min_amount: Option<Amount>,
+    pub description: Option<String>,
+    pub absolute_expiry: Option<u64>,
+    pub issuer: Option<String>,
+    pub signing_pubkey: Option<String>,
+    pub paths: Vec<LnOfferBlindedPath>,
+}
+
 #[frb(mirror(RouteHint))]
 pub struct _RouteHint {
     pub hops: Vec<RouteHintHop>,
@@ -163,8 +203,16 @@ pub enum _InputType {
     BitcoinAddress {
         address: BitcoinAddressData,
     },
+    LiquidAddress {
+        address: LiquidAddressData,
+    },
     Bolt11 {
         invoice: LNInvoice,
+    },
+    Bolt12Offer {
+        offer: LNOffer,
+        /// The BIP353 address from which this InputType was resolved
+        bip353_address: Option<String>,
     },
     NodeId {
         node_id: String,
