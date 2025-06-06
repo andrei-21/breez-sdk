@@ -15,7 +15,7 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 use rusqlite::Connection;
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::pin::Pin;
@@ -46,16 +46,18 @@ use crate::node_api::{CreateInvoiceRequest, FetchBolt11Result, NodeAPI, NodeErro
 use crate::{models::*, LspInformation};
 use crate::{PrepareRedeemOnchainFundsRequest, PrepareRedeemOnchainFundsResponse};
 
+type Store = Arc<dyn KVStore + Sync + Send>;
+
 pub(crate) struct Ldk {
     seed: [u8; 64],
     node: Arc<Node>,
     invoice_stream: Mutex<Option<mpsc::Receiver<Payment>>>,
-    preimages: Arc<Mutex<HashMap<PaymentHash, PaymentPreimage>>>,
     remote_lock_shutdown_tx: mpsc::Sender<()>,
+    store: Store,
 }
 
 impl Ldk {
-    pub async fn build(working_dir: String, seed: &[u8], tracked_preimages: Vec<Vec<u8>>) -> Self {
+    pub async fn build(working_dir: String, seed: &[u8]) -> Self {
         let lsp = "0361984fe2a03cc594e97de423bf461096dd26a52e77feda68510377f360e430d4";
         let lsp = PublicKey::from_str(lsp).unwrap();
 
@@ -92,11 +94,6 @@ impl Ldk {
         builder.set_network(ldk_node::bitcoin::Network::Regtest);
         builder.set_chain_source_esplora("http://localhost:30000".to_string(), None);
         builder.set_gossip_source_rgs("http://localhost:8011".to_string());
-        let preimages = tracked_preimages
-            .into_iter()
-            .map(|p| PaymentPreimage(p.as_slice().try_into().unwrap()))
-            .map(|p| (p.into(), p))
-            .collect();
 
         debug!("Building LDK Node");
 
@@ -133,7 +130,7 @@ impl Ldk {
         let store = MirroringStore::new(tokio::runtime::Handle::current(), conn, locking_store)
             .await
             .unwrap();
-        let store: Arc<dyn KVStore + Sync + Send> = Arc::new(store);
+        let store: Store = Arc::new(store);
 
         // The builder creates another tokio runtime inside and can drop it in case of errors.
         // But dropping runtime is not allowed here:
@@ -147,17 +144,13 @@ impl Ldk {
             seed,
             node: Arc::new(node),
             invoice_stream: Mutex::default(),
-            preimages: Arc::new(Mutex::new(preimages)),
             remote_lock_shutdown_tx,
+            store,
         }
     }
 }
 
-async fn stream_invoices(
-    node: Arc<Node>,
-    preimages: Arc<Mutex<HashMap<PaymentHash, PaymentPreimage>>>,
-    tx: mpsc::Sender<Payment>,
-) {
+async fn stream_invoices(node: Arc<Node>, store: Store, tx: mpsc::Sender<Payment>) {
     loop {
         let event = tokio::select! {
             event = node.next_event_async() => event,
@@ -193,17 +186,21 @@ async fn stream_invoices(
                 claim_deadline: _,
                 custom_records: _,
             } => {
-                match preimages.lock().await.remove(&payment_hash) {
-                    Some(preimage) => {
+                let h = payment_hash.to_hex();
+                match store.read("preimages", "", &h) {
+                    Ok(preimage) => {
+                        let preimage = PaymentPreimage(preimage.as_slice().try_into().unwrap());
                         if let Err(e) = node.bolt11_payment().claim_for_hash(
                             payment_hash,
                             claimable_amount_msat,
                             preimage,
                         ) {
                             error!("Failed to claim payment: {e}");
+                        } else {
+                            let _ = store.remove("preimages", "", &h, false);
                         }
                     }
-                    None => {
+                    Err(_e) => {
                         if let Err(e) = node.bolt11_payment().fail_for_hash(payment_hash) {
                             error!("Failed to fail payment: {e}");
                         }
@@ -246,9 +243,9 @@ impl NodeAPI for Ldk {
         debug!("LDK Node started");
 
         let node = Arc::clone(&self.node);
-        let preimages = Arc::clone(&self.preimages);
+        let store = Arc::clone(&self.store);
         let (tx, rx) = mpsc::channel(10);
-        tokio::spawn(async move { stream_invoices(node, preimages, tx).await });
+        tokio::spawn(async move { stream_invoices(node, store, tx).await });
         self.invoice_stream.lock().await.replace(rx);
         debug!("Event handling started");
 
@@ -288,13 +285,14 @@ impl NodeAPI for Ldk {
             Bolt11InvoiceDescription::Direct(Description::new(request.description).unwrap());
         let expiry = request.expiry.unwrap_or(3600);
 
-        let preimage = request
-            .preimage
-            .map(|p| PaymentPreimage(p.as_slice().try_into().unwrap()))
-            // TODO: Store preimage in MirroringStore.
-            .unwrap_or_else(|| PaymentPreimage(rand::thread_rng().gen::<[u8; 32]>()));
-        let payment_hash = preimage.into();
-        self.preimages.lock().await.insert(payment_hash, preimage);
+        let preimage = match request.preimage {
+            Some(p) => PaymentPreimage(p.as_slice().try_into().unwrap()),
+            None => PaymentPreimage(rand::thread_rng().gen::<[u8; 32]>()),
+        };
+        let payment_hash: PaymentHash = preimage.into();
+        self.store
+            .write("preimages", "", &payment_hash.to_hex(), &preimage.0)
+            .unwrap();
 
         self.node
             .bolt11_payment()

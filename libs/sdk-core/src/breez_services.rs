@@ -2453,19 +2453,6 @@ impl BreezServicesBuilder {
             .clone()
             .unwrap_or_else(|| Arc::new(SqliteStorage::new(self.config.working_dir.clone())));
         persister.init()?;
-        let tracked_preimages = persister
-            .list_swaps(ListSwapsRequest {
-                status: Some(vec![
-                    SwapStatus::Initial,
-                    SwapStatus::WaitingConfirmation,
-                    SwapStatus::Redeemable,
-                ]),
-                ..Default::default()
-            })
-            .unwrap()
-            .into_iter()
-            .map(|s| s.preimage)
-            .collect::<Vec<_>>();
 
         let mut node_api = self.node_api.clone();
         let mut backup_transport = self.backup_transport.clone();
@@ -2473,12 +2460,7 @@ impl BreezServicesBuilder {
             let prototype = true;
             if prototype {
                 let ldk = Arc::new(
-                    Ldk::build(
-                        self.config.working_dir.clone(),
-                        self.seed.as_ref().unwrap(),
-                        tracked_preimages,
-                    )
-                    .await,
+                    Ldk::build(self.config.working_dir.clone(), self.seed.as_ref().unwrap()).await,
                 );
                 node_api = Some(ldk);
                 backup_transport = Some(Arc::new(VssBackupTransport {}));
