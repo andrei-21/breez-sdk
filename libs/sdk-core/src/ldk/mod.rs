@@ -6,5 +6,5 @@ mod node_api;
 mod versioned_store;
 mod vss_store;
 
-pub(crate) use backup_transport::VssBackupTransport;
+pub(crate) use backup_transport::LdkBackupTransport;
 pub(crate) use node_api::Ldk;

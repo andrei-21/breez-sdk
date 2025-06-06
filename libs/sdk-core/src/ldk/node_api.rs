@@ -102,7 +102,8 @@ impl Ldk {
             ExponentialBackoffRetryPolicy::<VssError>::new(Duration::from_secs(1))
                 .with_max_attempts(2),
         );
-        let vss_store = VssStore::new(vss_client, seed_hash);
+        let store_id = format!("{seed_hash}/ldk_node");
+        let vss_store = VssStore::new(vss_client, store_id);
         let locking_store = LockingStore::new(instance_id, vss_store).await.unwrap();
         let locking_store = Arc::new(locking_store);
 
