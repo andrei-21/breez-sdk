@@ -60,6 +60,15 @@ impl CommandHandler {
         }
     }
 
+	pub async fn exit(&mut self) -> Result<String, Error> {
+		if let Ok(sdk) = self.sdk() {
+			sdk.disconnect().await?;
+			self.sdk = None;
+			return Ok("Node was stopped successfully".to_string());
+		}
+		Ok(String::new())
+	}
+
     pub async fn handle_command(
         &mut self,
         rl: &mut Editor<CliHelper, DefaultHistory>,
