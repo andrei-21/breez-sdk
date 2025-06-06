@@ -311,6 +311,15 @@ pub struct MockNodeAPI {
 
 #[tonic::async_trait]
 impl NodeAPI for MockNodeAPI {
+    async fn send_bolt12_payment(
+        &self,
+        _offer: String,
+        _payment_id: String,
+        _amount_msat: Option<u64>,
+    ) -> NodeResult<Payment> {
+        Err(NodeError::Generic("Not implemented".to_string()))
+    }
+
     async fn node_credentials(&self) -> NodeResult<Option<NodeCredentials>> {
         Err(NodeError::Generic("Not implemented".to_string()))
     }

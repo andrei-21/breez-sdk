@@ -1420,6 +1420,15 @@ impl NodeAPI for Greenlight {
         payment.try_into()
     }
 
+    async fn send_bolt12_payment(
+        &self,
+        _offer: String,
+        _payment_id: String,
+        _amount_msat: Option<u64>,
+    ) -> NodeResult<Payment> {
+        todo!()
+    }
+
     async fn send_trampoline_payment(
         &self,
         bolt11: String,

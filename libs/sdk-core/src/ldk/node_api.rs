@@ -5,6 +5,7 @@ use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::bitcoin::{Address, FeeRate};
 use ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_node::lightning::ln::msgs::SocketAddress;
+use ldk_node::lightning::offers::offer::Offer;
 use ldk_node::lightning::util::persist::KVStore;
 use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
 use ldk_node::lightning_types::payment::{PaymentHash, PaymentPreimage};
@@ -290,7 +291,7 @@ impl NodeAPI for Ldk {
         let preimage = request
             .preimage
             .map(|p| PaymentPreimage(p.as_slice().try_into().unwrap()))
-            // TODO: Reuse LDK mechanism to generate preimages without the need to store them.
+            // TODO: Store preimage in MirroringStore.
             .unwrap_or_else(|| PaymentPreimage(rand::thread_rng().gen::<[u8; 32]>()));
         let payment_hash = preimage.into();
         self.preimages.lock().await.insert(payment_hash, preimage);
@@ -421,6 +422,27 @@ impl NodeAPI for Ldk {
         let payment_id = match amount_msat {
             Some(amount_msat) => payments.send_using_amount(&invoice, amount_msat, None),
             None => payments.send(&invoice, None),
+        }
+        .map_err(to_node_error)?;
+
+        let payment = find_and_map_payment(&self.node, payment_id);
+        Ok(payment)
+    }
+
+    async fn send_bolt12_payment(
+        &self,
+        offer: String,
+        payment_id: String,
+        amount_msat: Option<u64>,
+    ) -> NodeResult<Payment> {
+        let offer = Offer::from_str(&offer).unwrap();
+        let payment_id = hex::decode(payment_id).unwrap();
+        let payment_id = PaymentId(payment_id.as_slice().try_into().unwrap());
+
+        let payments = self.node.bolt12_payment();
+        let payment_id = match amount_msat {
+            Some(amount) => payments.send_using_amount(&offer, payment_id, amount, None, None),
+            None => payments.send(&offer, payment_id, None, None),
         }
         .map_err(to_node_error)?;
 
@@ -755,7 +777,23 @@ fn to_payment_details(
                 ..Default::default()
             },
         },
-        ldk_node::payment::PaymentKind::Bolt12Offer { .. } => todo!(),
+        ldk_node::payment::PaymentKind::Bolt12Offer {
+            hash,
+            preimage,
+            secret: _,
+            offer_id,
+            ..
+        } => PaymentDetails::Ln {
+            data: LnPaymentDetails {
+                payment_hash: hash.as_ref().map(hex).unwrap_or_default(),
+                label: String::new(),
+                payment_preimage: preimage.as_ref().map(hex).unwrap_or_default(),
+                keysend: false,
+                bolt11: hex(offer_id),
+                open_channel_bolt11: None,
+                ..Default::default()
+            },
+        },
         ldk_node::payment::PaymentKind::Bolt12Refund { .. } => todo!(),
         // TODO: It is not necessary channel close.
         ldk_node::payment::PaymentKind::Onchain { txid, status } => PaymentDetails::ClosedChannel {

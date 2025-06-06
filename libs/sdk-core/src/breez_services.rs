@@ -274,7 +274,57 @@ impl BreezServices {
         &self,
         req: SendPaymentRequest,
     ) -> Result<SendPaymentResponse, SendPaymentError> {
-        let parsed_invoice = parse_invoice(req.bolt11.as_str())?;
+        if let Ok(offer) = parse_bolt12_offer(&req.bolt11) {
+            use rand::Rng;
+
+            let amount_msat = match (req.amount_msat, offer.min_amount) {
+                (Some(amount_msat), _) => amount_msat,
+                (None, Some(Amount::Bitcoin { amount_msat })) => amount_msat,
+                (None, Some(Amount::Currency { .. })) => {
+                    return Err(SendPaymentError::InvalidAmount {
+                        err: "Non-sats amount not supported for bolt12 offers".into(),
+                    })
+                }
+                (None, None) => {
+                    return Err(SendPaymentError::InvalidAmount {
+                        err: "Amount must be provided when paying a bolt12 offer".into(),
+                    })
+                }
+            };
+
+            let payment_id = hex::encode(rand::thread_rng().gen::<[u8; 32]>());
+            self.persister.insert_or_update_payments(
+                &[Payment {
+                    id: payment_id.clone(),
+                    payment_type: PaymentType::Sent,
+                    payment_time: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64,
+                    amount_msat,
+                    fee_msat: 0,
+                    status: PaymentStatus::Pending,
+                    error: None,
+                    description: offer.description,
+                    details: PaymentDetails::Ln {
+                        data: LnPaymentDetails {
+                            payment_hash: String::new(),
+                            destination_pubkey: offer.signing_pubkey.unwrap(),
+                            payment_preimage: String::new(),
+                            bolt11: offer.offer.clone(),
+                            ..Default::default()
+                        },
+                    },
+                    metadata: None,
+                }],
+                true,
+            )?;
+
+            let payment = self
+                .node_api
+                .send_bolt12_payment(offer.offer, payment_id, req.amount_msat)
+                .await?;
+            return Ok(SendPaymentResponse { payment });
+        }
+
+        let parsed_invoice = parse_invoice(&req.bolt11)?;
         let invoice_expiration = parsed_invoice.timestamp + parsed_invoice.expiry;
         let current_time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
         if invoice_expiration < current_time {
