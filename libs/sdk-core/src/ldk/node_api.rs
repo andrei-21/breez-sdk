@@ -36,6 +36,7 @@ use crate::bitcoin::bech32::ToBase32;
 use crate::bitcoin::secp256k1::ecdsa::RecoverableSignature;
 use crate::bitcoin::secp256k1::Secp256k1;
 use crate::bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
+use crate::ldk::config::Config;
 use crate::ldk::locking_store::LockingStore;
 use crate::ldk::logger::Logger;
 use crate::ldk::mirroring_store::MirroringStore;
@@ -58,7 +59,11 @@ pub(crate) struct Ldk {
 }
 
 impl Ldk {
-    pub async fn build(working_dir: String, seed: &[u8]) -> Self {
+    pub async fn build(
+        working_dir: String,
+        seed: &[u8],
+        network: &sdk_common::prelude::Network,
+    ) -> Self {
         let lsp = "0361984fe2a03cc594e97de423bf461096dd26a52e77feda68510377f360e430d4";
         let lsp = PublicKey::from_str(lsp).unwrap();
 
@@ -80,6 +85,7 @@ impl Ldk {
             instance_id
         });
 
+        debug!("Building LDK Node");
         let mut builder = Builder::from_config(config);
 
         let seed_hash = Sha256::hash(seed).to_hex();
@@ -88,18 +94,19 @@ impl Ldk {
         let seed = bytes;
         builder.set_entropy_seed_bytes(seed);
         builder.set_custom_logger(Arc::new(Logger {}));
-        builder.set_storage_dir_path(working_dir.clone());
 
-        // builder.set_chain_source_esplora("https://blockstream.info/api".to_string(), None);
-        // builder.set_gossip_source_rgs("https://rapidsync.lightningdevkit.org/snapshot".to_string());
-        builder.set_network(ldk_node::bitcoin::Network::Regtest);
-        builder.set_chain_source_esplora("http://localhost:30000".to_string(), None);
-        builder.set_gossip_source_rgs("http://localhost:8011".to_string());
+        let config = match network {
+            crate::prelude::Network::Bitcoin => Config::mainnet(),
+            crate::prelude::Network::Regtest => Config::regtest(),
+            network => panic!("Unsupported network {network}"),
+        };
 
-        debug!("Building LDK Node");
+        builder.set_network(to_ldk_network(network));
+        builder.set_chain_source_esplora(config.esplora_url, None);
+        builder.set_gossip_source_rgs(config.rgs_url);
 
         let vss_client = VssClient::new(
-            "http://localhost:3080/vss".to_string(),
+            config.vss_url,
             ExponentialBackoffRetryPolicy::<VssError>::new(Duration::from_secs(1))
                 .with_max_attempts(2),
         );
@@ -581,7 +588,7 @@ impl NodeAPI for Ldk {
     }
 
     async fn derive_bip32_key(&self, path: Vec<ChildNumber>) -> NodeResult<ExtendedPrivKey> {
-        let network = sdk_common::prelude::Network::Regtest;
+        let network = from_ldk_network(&self.node.config().network);
         Ok(ExtendedPrivKey::new_master(network.into(), &self.seed)?
             .derive_priv(&Secp256k1::new(), &path)?)
     }
@@ -822,5 +829,24 @@ fn to_channel_state(status: &ConfirmationStatus) -> ChannelState {
     match status {
         ConfirmationStatus::Confirmed { .. } => ChannelState::Closed,
         ConfirmationStatus::Unconfirmed => ChannelState::PendingClose,
+    }
+}
+
+fn to_ldk_network(network: &crate::prelude::Network) -> ldk_node::bitcoin::network::Network {
+    match network {
+        crate::prelude::Network::Bitcoin => ldk_node::bitcoin::network::Network::Bitcoin,
+        crate::prelude::Network::Testnet => ldk_node::bitcoin::network::Network::Testnet,
+        crate::prelude::Network::Signet => ldk_node::bitcoin::network::Network::Signet,
+        crate::prelude::Network::Regtest => ldk_node::bitcoin::network::Network::Regtest,
+    }
+}
+fn from_ldk_network(network: &ldk_node::bitcoin::network::Network) -> crate::prelude::Network {
+    match network {
+        ldk_node::bitcoin::network::Network::Bitcoin => crate::prelude::Network::Bitcoin,
+        ldk_node::bitcoin::network::Network::Testnet => crate::prelude::Network::Testnet,
+        ldk_node::bitcoin::network::Network::Testnet4 => crate::prelude::Network::Testnet,
+        ldk_node::bitcoin::network::Network::Signet => crate::prelude::Network::Signet,
+        ldk_node::bitcoin::network::Network::Regtest => crate::prelude::Network::Regtest,
+        network => panic!("Unexpected network {network}"),
     }
 }

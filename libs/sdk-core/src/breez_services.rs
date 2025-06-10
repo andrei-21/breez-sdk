@@ -2460,9 +2460,14 @@ impl BreezServicesBuilder {
         if node_api.is_none() {
             let prototype = true;
             if prototype {
-                let ldk = Arc::new(Ldk::build(self.config.working_dir.clone(), seed).await);
+                let ldk = Arc::new(
+                    Ldk::build(self.config.working_dir.clone(), seed, &self.config.network).await,
+                );
                 node_api = Some(ldk);
-                backup_transport = Some(Arc::new(LdkBackupTransport::new(seed)));
+                backup_transport = Some(Arc::new(LdkBackupTransport::new(
+                    seed,
+                    &self.config.network,
+                )));
             } else {
                 let greenlight = Greenlight::connect(
                     self.config.clone(),

@@ -1,4 +1,5 @@
 mod backup_transport;
+mod config;
 mod locking_store;
 mod logger;
 mod mirroring_store;

@@ -9,6 +9,7 @@ use sdk_common::bitcoin::hashes::Hash;
 
 use crate::backup::{BackupState, BackupTransport};
 use crate::error::{SdkError, SdkResult};
+use crate::ldk::config::Config;
 use crate::ldk::versioned_store::VersionedStore;
 use crate::ldk::vss_store::VssStore;
 
@@ -19,11 +20,17 @@ pub(crate) struct LdkBackupTransport {
 impl LdkBackupTransport {
     const KEY: &str = "backup";
 
-    pub fn new(seed: &[u8]) -> Self {
+    pub fn new(seed: &[u8], network: &sdk_common::prelude::Network) -> Self {
+        let config = match network {
+            crate::prelude::Network::Bitcoin => Config::mainnet(),
+            crate::prelude::Network::Regtest => Config::regtest(),
+            network => panic!("Unsupported network {network}"),
+        };
+
         let seed_hash = Sha256::hash(seed).to_hex();
         let store_id = format!("{seed_hash}/backups");
         let vss_client = VssClient::new(
-            "http://localhost:3080/vss".to_string(),
+            config.vss_url,
             ExponentialBackoffRetryPolicy::<VssError>::new(Duration::from_secs(1))
                 .with_max_attempts(2),
         );
