@@ -9,7 +9,7 @@ impl Config {
         Self {
             esplora_url: "https://blockstream.info/api".to_string(),
             rgs_url: "https://rapidsync.lightningdevkit.org/snapshot".to_string(),
-            vss_url: "http://localhost:3081/vss".to_string(),
+            vss_url: "http://localhost:4080/vss".to_string(),
         }
     }
 

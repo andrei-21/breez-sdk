@@ -535,7 +535,7 @@ impl CommandHandler {
                         // min can receive = max(minWithdrawable, local minimal value allowed by wallet)
                         // However, for simplicity, we just use the LNURL-withdraw min/max bounds
                         let user_input_max_msat = wd.max_withdrawable;
-                        let user_input_min_msat = 2_001_000;
+                        let user_input_min_msat = 2_000;
 
                         if user_input_max_msat < user_input_min_msat {
                             error!("The LNURLw endpoint needs to accept at least {user_input_min_msat} msat, but min / max withdrawable are {} msat / {} msat",

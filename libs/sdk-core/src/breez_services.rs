@@ -306,7 +306,7 @@ impl BreezServices {
                     details: PaymentDetails::Ln {
                         data: LnPaymentDetails {
                             payment_hash: String::new(),
-                            destination_pubkey: offer.signing_pubkey.unwrap(),
+                            destination_pubkey: offer.signing_pubkey.unwrap_or_default(),
                             payment_preimage: String::new(),
                             bolt11: offer.offer.clone(),
                             ..Default::default()
