@@ -51,7 +51,8 @@ type Store = Arc<dyn KVStore + Sync + Send>;
 pub(crate) struct Ldk {
     seed: [u8; 64],
     node: Arc<Node>,
-    invoice_stream: Mutex<Option<mpsc::Receiver<Payment>>>,
+    payments_tx: mpsc::Sender<Payment>,
+    payments_rx: Mutex<Option<mpsc::Receiver<Payment>>>,
     remote_lock_shutdown_tx: mpsc::Sender<()>,
     store: Store,
 }
@@ -141,10 +142,13 @@ impl Ldk {
             tokio::task::block_in_place(|| builder.build_with_store(Arc::clone(&store))).unwrap();
         info!("LDK Node was built");
 
+        let (payments_tx, payments_rx) = mpsc::channel(10);
+
         Self {
             seed,
             node: Arc::new(node),
-            invoice_stream: Mutex::default(),
+            payments_tx,
+            payments_rx: Mutex::new(Some(payments_rx)),
             remote_lock_shutdown_tx,
             store,
         }
@@ -245,9 +249,8 @@ impl NodeAPI for Ldk {
 
         let node = Arc::clone(&self.node);
         let store = Arc::clone(&self.store);
-        let (tx, rx) = mpsc::channel(10);
+        let tx = self.payments_tx.clone();
         tokio::spawn(async move { stream_invoices(node, store, tx).await });
-        self.invoice_stream.lock().await.replace(rx);
         debug!("Event handling started");
 
         tokio::select! {
@@ -267,10 +270,7 @@ impl NodeAPI for Ldk {
         };
     }
 
-    /// Keeps background tasks running.
-    async fn start_keep_alive(&self, shutdown: watch::Receiver<()>) {
-        debug!("ldk: start_keep_alive()");
-    }
+    async fn start_keep_alive(&self, _shutdown: watch::Receiver<()>) {}
 
     async fn node_credentials(&self) -> NodeResult<Option<NodeCredentials>> {
         Ok(None)
@@ -545,18 +545,18 @@ impl NodeAPI for Ldk {
     }
 
     async fn stream_incoming_payments(&self) -> NodeResult<mpsc::Receiver<Payment>> {
-        self.invoice_stream
+        self.payments_rx
             .lock()
             .await
             .take()
-            .ok_or(NodeError::generic("Invoice stream is not initialized"))
+            .ok_or(NodeError::generic("Invoice stream has already started"))
     }
 
     async fn stream_log_messages(
         &self,
     ) -> NodeResult<mpsc::Receiver<gl_client::signer::model::greenlight::LogEntry>> {
-        let (send, recv) = mpsc::channel(10);
-        Ok(recv)
+        let (_tx, rx) = mpsc::channel(1);
+        Ok(rx)
     }
 
     async fn static_backup(&self) -> NodeResult<Vec<String>> {
