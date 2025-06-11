@@ -370,10 +370,8 @@ impl NodeAPI for Ldk {
             .collect();
 
         let channels = self.node.list_channels();
-        let max_receivable_single_payment_amount_msat = channels
-            .iter()
-            .flat_map(|c| c.inbound_htlc_maximum_msat)
-            .sum();
+        let max_receivable_single_payment_amount_msat =
+            channels.iter().map(|c| c.inbound_capacity_msat).sum();
         debug!("Channels: {channels:?}");
 
         let channels = channels.into_iter().flat_map(map_channel).collect();
