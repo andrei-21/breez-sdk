@@ -584,7 +584,17 @@ impl NodeAPI for Ldk {
         max_hops: u32,
         last_hop_hint: Option<&'a RouteHintHop>,
     ) -> NodeResult<Vec<MaxChannelAmount>> {
-        todo!()
+        let channels = self.node.list_channels();
+        let amounts = channels
+            .iter()
+            .map(|c| MaxChannelAmount {
+                channel_id: hex(&c.channel_id),
+                amount_msat: c.next_outbound_htlc_limit_msat,
+                path: PaymentPath { edges: Vec::new() },
+            })
+            .collect();
+
+        Ok(amounts)
     }
 
     async fn derive_bip32_key(&self, path: Vec<ChildNumber>) -> NodeResult<ExtendedPrivKey> {
