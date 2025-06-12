@@ -22,7 +22,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
-use tokio::sync::{mpsc, watch, Mutex};
+use tokio::sync::{broadcast, mpsc, watch, Mutex};
 use vss_client::client::VssClient;
 use vss_client::error::VssError;
 use vss_client::util::retry::{ExponentialBackoffRetryPolicy, RetryPolicy};
@@ -52,6 +52,7 @@ type Store = Arc<dyn KVStore + Sync + Send>;
 pub(crate) struct Ldk {
     seed: [u8; 64],
     node: Arc<Node>,
+    events_tx: broadcast::Sender<Event>,
     payments_tx: mpsc::Sender<Payment>,
     payments_rx: Mutex<Option<mpsc::Receiver<Payment>>>,
     remote_lock_shutdown_tx: mpsc::Sender<()>,
@@ -151,9 +152,12 @@ impl Ldk {
 
         let (payments_tx, payments_rx) = mpsc::channel(10);
 
+        let (events_tx, _) = broadcast::channel(100);
+
         Self {
             seed,
             node: Arc::new(node),
+            events_tx,
             payments_tx,
             payments_rx: Mutex::new(Some(payments_rx)),
             remote_lock_shutdown_tx,
@@ -162,7 +166,12 @@ impl Ldk {
     }
 }
 
-async fn stream_invoices(node: Arc<Node>, store: Store, tx: mpsc::Sender<Payment>) {
+async fn stream_invoices(
+    node: Arc<Node>,
+    store: Store,
+    events_tx: broadcast::Sender<Event>,
+    tx: mpsc::Sender<Payment>,
+) {
     loop {
         let event = tokio::select! {
             event = node.next_event_async() => event,
@@ -172,6 +181,8 @@ async fn stream_invoices(node: Arc<Node>, store: Store, tx: mpsc::Sender<Payment
             },
         };
         info!("Event: {event:?}");
+        let _ = events_tx.send(event.clone());
+
         match event {
             Event::PaymentReceived { payment_id, .. } => {
                 let payment = find_and_map_payment(&node, payment_id.unwrap());
@@ -257,7 +268,8 @@ impl NodeAPI for Ldk {
         let node = Arc::clone(&self.node);
         let store = Arc::clone(&self.store);
         let tx = self.payments_tx.clone();
-        tokio::spawn(async move { stream_invoices(node, store, tx).await });
+        let events_tx = self.events_tx.clone();
+        tokio::spawn(async move { stream_invoices(node, store, events_tx, tx).await });
         debug!("Event handling started");
 
         tokio::select! {
@@ -412,7 +424,19 @@ impl NodeAPI for Ldk {
     }
 
     async fn send_pay(&self, bolt11: String, max_hops: u32) -> NodeResult<PaymentResponse> {
-        todo!()
+        let payment = self.send_payment(bolt11, None, None).await?;
+        let details = if let PaymentDetails::Ln { data } = payment.details {
+            data
+        } else {
+            panic!("Weird payment type");
+        };
+        Ok(PaymentResponse {
+            payment_time: payment.payment_time,
+            amount_msat: payment.amount_msat,
+            fee_msat: payment.fee_msat,
+            payment_hash: details.payment_hash,
+            payment_preimage: details.payment_preimage,
+        })
     }
 
     async fn send_payment(
@@ -423,11 +447,14 @@ impl NodeAPI for Ldk {
     ) -> NodeResult<Payment> {
         let invoice = ldk_node::lightning_invoice::Bolt11Invoice::from_str(&bolt11).unwrap();
         let payments = self.node.bolt11_payment();
+        let events = self.events_tx.subscribe(); // Subscribe before we try to send.
         let payment_id = match amount_msat {
             Some(amount_msat) => payments.send_using_amount(&invoice, amount_msat, None),
             None => payments.send(&invoice, None),
         }
         .map_err(to_node_error)?;
+
+        wait_for_payment_success(events, payment_id).await?;
 
         let payment = find_and_map_payment(&self.node, payment_id);
         Ok(payment)
@@ -848,6 +875,7 @@ fn to_ldk_network(network: &crate::prelude::Network) -> ldk_node::bitcoin::netwo
         crate::prelude::Network::Regtest => ldk_node::bitcoin::network::Network::Regtest,
     }
 }
+
 fn from_ldk_network(network: &ldk_node::bitcoin::network::Network) -> crate::prelude::Network {
     match network {
         ldk_node::bitcoin::network::Network::Bitcoin => crate::prelude::Network::Bitcoin,
@@ -857,4 +885,29 @@ fn from_ldk_network(network: &ldk_node::bitcoin::network::Network) -> crate::pre
         ldk_node::bitcoin::network::Network::Regtest => crate::prelude::Network::Regtest,
         network => panic!("Unexpected network {network}"),
     }
+}
+
+async fn wait_for_payment_success(
+    mut events_rx: broadcast::Receiver<Event>,
+    p_id: PaymentId,
+) -> NodeResult<()> {
+    debug!("wait_for_payment() id:{}", hex(&p_id));
+    while let Ok(event) = events_rx.recv().await {
+        debug!("wait_for_payment() event:{event:?}");
+        match event {
+            Event::PaymentSuccessful { payment_id, .. } if payment_id == Some(p_id) => {
+                return Ok(());
+            }
+            Event::PaymentFailed {
+                payment_id,
+                payment_hash: _,
+                reason,
+            } if payment_id == Some(p_id) => {
+                let reason = format!("{:?}", reason.unwrap());
+                return Err(NodeError::PaymentFailed(reason));
+            }
+            _ => continue,
+        }
+    }
+    Err(NodeError::generic("Node is shutting down"))
 }
