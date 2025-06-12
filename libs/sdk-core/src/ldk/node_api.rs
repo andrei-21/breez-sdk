@@ -119,17 +119,23 @@ impl Ldk {
         let ls = Arc::clone(&locking_store);
         let (remote_lock_shutdown_tx, mut remote_lock_shutdown_rx) = mpsc::channel(1);
         tokio::task::spawn(async move {
-            while let Ok(until) = ls.refresh_lock().await {
-                tokio::select! {
-                    _ = tokio::time::sleep_until(until) => (),
-                    _ = remote_lock_shutdown_rx.recv() => {
-                        match ls.unlock().await {
-                            Ok(()) => info!("Remote lock was released"),
-                            Err(e) => error!("Failed to release remote lock: {e}"),
-                        };
+            loop {
+                match ls.refresh_lock().await {
+                    Ok(until) => tokio::select! {
+                        _ = tokio::time::sleep_until(until) => (),
+                        _ = remote_lock_shutdown_rx.recv() => {
+                            match ls.unlock().await {
+                                Ok(()) => info!("Remote lock was released"),
+                                Err(e) => error!("Failed to release remote lock: {e}"),
+                            };
+                            break;
+                        },
+                    },
+                    Err(e) => {
+                        error!("Failed to refresh remote lock: {e:?}");
                         break;
                     }
-                };
+                }
             }
             // Explicitly drop the receiver to let the sender know we are done with releasing the lock.
             drop(remote_lock_shutdown_rx);
