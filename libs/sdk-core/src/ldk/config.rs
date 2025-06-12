@@ -17,7 +17,7 @@ impl Config {
         Self {
             esplora_url: "http://localhost:30000".to_string(),
             rgs_url: "http://localhost:8011".to_string(),
-            vss_url: "http://localhost:3081/vss".to_string(),
+            vss_url: "http://localhost:3080/vss".to_string(),
         }
     }
 }

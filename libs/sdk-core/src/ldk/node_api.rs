@@ -461,7 +461,6 @@ impl NodeAPI for Ldk {
         .map_err(to_node_error)?;
 
         wait_for_payment_success(events, payment_id).await?;
-
         let payment = find_and_map_payment(&self.node, payment_id);
         Ok(payment)
     }
@@ -477,12 +476,14 @@ impl NodeAPI for Ldk {
         let payment_id = PaymentId(payment_id.as_slice().try_into().unwrap());
 
         let payments = self.node.bolt12_payment();
+        let events = self.events_tx.subscribe(); // Subscribe before we try to send.
         let payment_id = match amount_msat {
             Some(amount) => payments.send_using_amount(&offer, payment_id, amount, None, None),
             None => payments.send(&offer, payment_id, None, None),
         }
         .map_err(to_node_error)?;
 
+        wait_for_payment_success(events, payment_id).await?;
         let payment = find_and_map_payment(&self.node, payment_id);
         Ok(payment)
     }
@@ -505,11 +506,13 @@ impl NodeAPI for Ldk {
         label: Option<String>,
     ) -> NodeResult<Payment> {
         let node_id = PublicKey::from_str(&node_id).unwrap();
+        let events = self.events_tx.subscribe(); // Subscribe before we try to send.
         let payment_id = self
             .node
             .spontaneous_payment()
             .send(amount_msat, node_id, None)
             .map_err(to_node_error)?;
+        wait_for_payment_success(events, payment_id).await?;
         let payment = find_and_map_payment(&self.node, payment_id);
         Ok(payment)
     }
