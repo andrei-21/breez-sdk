@@ -9,7 +9,7 @@ use ldk_node::lightning::offers::offer::Offer;
 use ldk_node::lightning::util::persist::KVStore;
 use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
 use ldk_node::lightning_types::payment::{PaymentHash, PaymentPreimage};
-use ldk_node::payment::ConfirmationStatus;
+use ldk_node::payment::{ConfirmationStatus, SendingParameters};
 use ldk_node::{Builder, Event, Node, PendingSweepBalance};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
@@ -454,9 +454,15 @@ impl NodeAPI for Ldk {
         let invoice = ldk_node::lightning_invoice::Bolt11Invoice::from_str(&bolt11).unwrap();
         let payments = self.node.bolt11_payment();
         let events = self.events_tx.subscribe(); // Subscribe before we try to send.
+        let params = Some(SendingParameters {
+            max_total_routing_fee_msat: None,
+            max_total_cltv_expiry_delta: None,
+            max_path_count: Some(3),
+            max_channel_saturation_power_of_half: None,
+        });
         let payment_id = match amount_msat {
-            Some(amount_msat) => payments.send_using_amount(&invoice, amount_msat, None),
-            None => payments.send(&invoice, None),
+            Some(amount_msat) => payments.send_using_amount(&invoice, amount_msat, params),
+            None => payments.send(&invoice, params),
         }
         .map_err(to_node_error)?;
 
