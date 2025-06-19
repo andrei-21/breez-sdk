@@ -1926,6 +1926,7 @@ impl BreezServices {
                 gl_client=debug,
                 h2=warn,
                 hyper=warn,
+                ldk_node=debug,
                 lightning_signer=warn,
                 reqwest=warn,
                 rustls=warn,
