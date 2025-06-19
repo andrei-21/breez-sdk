@@ -1,18 +1,23 @@
 use ldk_node::logger::{LogLevel as LdkLevel, LogRecord, LogWriter};
-use log::{logger, Level, Record};
+use log::{logger, Level, MetadataBuilder, Record};
 
 pub(crate) struct Logger;
 
 impl LogWriter for Logger {
     fn log(&self, record: LogRecord<'_>) {
-        let record = Record::builder()
-            .args(record.args)
+        let metadata = MetadataBuilder::new()
             .level(to_log_level(record.level))
             .target("ldk_node")
-            .line(Some(record.line))
-            .module_path(Some(record.module_path))
             .build();
-        logger().log(&record)
+        if logger().enabled(&metadata) {
+            let record = Record::builder()
+                .metadata(metadata)
+                .args(record.args)
+                .line(Some(record.line))
+                .module_path(Some(record.module_path))
+                .build();
+            logger().log(&record);
+        }
     }
 }
 
