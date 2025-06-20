@@ -71,18 +71,24 @@ impl<P: RetryPolicy<E = VssError> + Send + Sync> VersionedStore for VssStore<P> 
     }
 
     async fn list(&self) -> Result<Vec<(String, i64)>> {
-        let request = ListKeyVersionsRequest {
+        let mut request = ListKeyVersionsRequest {
             store_id: self.store_id.clone(),
             ..Default::default()
         };
-        let response = self
-            .client
-            .list_key_versions(&request)
-            .await?
-            .key_versions
+        let mut versions = Vec::new();
+        loop {
+            let mut response = self.client.list_key_versions(&request).await?;
+            versions.append(&mut response.key_versions);
+            if response.next_page_token.as_deref().unwrap_or("").is_empty() {
+                break;
+            }
+            request.page_token = response.next_page_token;
+        }
+
+        let versions = versions
             .into_iter()
             .map(|kv| (kv.key, kv.version))
             .collect();
-        Ok(response)
+        Ok(versions)
     }
 }

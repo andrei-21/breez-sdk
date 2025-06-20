@@ -75,20 +75,24 @@ impl<S: Deref<Target = T>, T: VersionedStore + Send + Sync> KVStore for Mirrorin
         key: &str,
         value: &[u8],
     ) -> io::Result<()> {
+        debug!(
+            "Writing {primary_ns}/{secondary_ns}/{key} {} bytes",
+            value.len()
+        );
         let conn = self.conn.lock().unwrap();
 
         let local_version: Option<i64> = conn.query_row(
             "SELECT local_version FROM store WHERE primary_ns = ?1 AND secondary_ns = ?2 AND key = ?3",
             params![primary_ns, secondary_ns, key],
             |row| row.get(0),
-        ).optional().unwrap();
+        ).optional().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         let next_version = match local_version {
             None => {
                 let next_version = 0;
                 conn.execute(
                     "INSERT INTO store (primary_ns, secondary_ns, key, value, local_version, remote_version) VALUES (?1, ?2, ?3, ?4, ?5, -1)",
                     params![primary_ns, secondary_ns, key, value, next_version],
-                ).unwrap();
+                ).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
                 next_version
             }
             Some(local_version) => {
@@ -96,22 +100,25 @@ impl<S: Deref<Target = T>, T: VersionedStore + Send + Sync> KVStore for Mirrorin
                 conn.execute(
                     "UPDATE store SET value = ?1, local_version = ?2 WHERE primary_ns = ?3 AND secondary_ns = ?4 AND key = ?5",
                     params![value, next_version, primary_ns, secondary_ns, key],
-                ).unwrap();
+                ).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
                 next_version
             }
         };
 
         let full_key = format!("{primary_ns}/{secondary_ns}/{key}");
-        tokio::task::block_in_place(|| {
+        let result = tokio::task::block_in_place(|| {
             self.handle
                 .block_on(self.remote_client.put(full_key, value, next_version))
-                .unwrap()
         });
+        if let Err(e) = result {
+            error!("Error on remote: {e}");
+            return Err(io::Error::new(io::ErrorKind::Other, e));
+        }
 
         conn.execute(
             "UPDATE store SET remote_version = local_version WHERE primary_ns = ?1 AND secondary_ns = ?2 AND key = ?3",
             params![primary_ns, secondary_ns, key],
-        ).unwrap();
+        ).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
         Ok(())
     }
@@ -169,7 +176,8 @@ async fn reconcile<S: VersionedStore>(conn: &Connection, remote: &S) -> anyhow::
 
     let remote_versions = remote.list().await?;
 
-    for (full_key, _version) in remote_versions {
+    for (full_key, version) in remote_versions {
+        trace!("Downloading {full_key} @ {version} ...");
         let parts: Vec<&str> = full_key.splitn(3, '/').collect();
         let (primary, secondary, key) = match &parts[..] {
             [p, s, k] => (p.to_string(), s.to_string(), k.to_string()),
@@ -177,6 +185,7 @@ async fn reconcile<S: VersionedStore>(conn: &Connection, remote: &S) -> anyhow::
         };
 
         if let Some((value, version)) = remote.get(full_key).await? {
+            trace!("Got {} bytes @ {version}", value.len());
             conn.execute(
                 "INSERT INTO store (primary_ns, secondary_ns, key, value, local_version, remote_version) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
                 params![primary, secondary, key, value, version - 1],
