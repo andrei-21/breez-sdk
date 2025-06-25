@@ -500,7 +500,7 @@ impl CommandHandler {
             } => match parse(&lnurl, None).await? {
                 LnUrlPay { data: pd, .. } => {
                     let prompt = format!(
-                        "Amount to pay in millisatoshi (min {} msat, max {} msat: ",
+                        "Amount to pay in millisatoshi (min {} msat, max {} msat): ",
                         pd.min_sendable, pd.max_sendable
                     );
 
