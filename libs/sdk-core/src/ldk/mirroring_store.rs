@@ -81,12 +81,12 @@ impl<S: Deref<Target = T>, T: VersionedStore + Send + Sync> KVStore for Mirrorin
         );
         let conn = self.conn.lock().unwrap();
 
-        let local_version: Option<i64> = conn.query_row(
-            "SELECT local_version FROM store WHERE primary_ns = ?1 AND secondary_ns = ?2 AND key = ?3",
+        let local_data: Option<(i64, Vec<u8>)> = conn.query_row(
+            "SELECT local_version, value FROM store WHERE primary_ns = ?1 AND secondary_ns = ?2 AND key = ?3",
             params![primary_ns, secondary_ns, key],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         ).optional().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        let next_version = match local_version {
+        let next_version = match local_data {
             None => {
                 let next_version = 0;
                 conn.execute(
@@ -95,7 +95,12 @@ impl<S: Deref<Target = T>, T: VersionedStore + Send + Sync> KVStore for Mirrorin
                 ).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
                 next_version
             }
-            Some(local_version) => {
+            Some((_, local_value)) if local_value == value => {
+                debug!("Local value is the same, skipping writing");
+                return Ok(());
+            }
+            Some((local_version, _)) => {
+                debug!("Local value is different, writing");
                 let next_version = local_version + 1;
                 conn.execute(
                     "UPDATE store SET value = ?1, local_version = ?2 WHERE primary_ns = ?3 AND secondary_ns = ?4 AND key = ?5",
