@@ -1,7 +1,6 @@
 mod backup_transport;
 mod config;
 mod locking_store;
-mod logger;
 mod mirroring_store;
 mod node_api;
 mod versioned_store;

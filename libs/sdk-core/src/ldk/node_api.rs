@@ -38,7 +38,6 @@ use crate::bitcoin::secp256k1::Secp256k1;
 use crate::bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey};
 use crate::ldk::config::Config;
 use crate::ldk::locking_store::LockingStore;
-use crate::ldk::logger::Logger;
 use crate::ldk::mirroring_store::MirroringStore;
 use crate::ldk::vss_store::VssStore;
 use crate::lightning::sign::{KeysManager, NodeSigner, Recipient};
@@ -94,7 +93,7 @@ impl Ldk {
         bytes.copy_from_slice(seed);
         let seed = bytes;
         builder.set_entropy_seed_bytes(seed);
-        builder.set_custom_logger(Arc::new(Logger {}));
+		builder.set_log_facade_logger();
 
         let config = match network {
             crate::prelude::Network::Bitcoin => Config::mainnet(),
