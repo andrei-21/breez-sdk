@@ -2886,26 +2886,29 @@ impl PaymentReceiver {
         let api_key = self.config.api_key.clone().unwrap_or_default();
         let api_key_hash = sha256::Hash::hash(api_key.as_bytes()).to_hex();
 
-        self.lsp
-            .register_payment(
-                lsp_info.id.clone(),
-                lsp_info.lsp_pubkey.clone(),
-                grpc::PaymentInformation {
-                    payment_hash: hex::decode(parsed_invoice.payment_hash.clone())
-                        .map_err(|e| anyhow!("Failed to decode hex payment hash: {e}"))?,
-                    payment_secret: parsed_invoice.payment_secret.clone(),
-                    destination: hex::decode(parsed_invoice.payee_pubkey.clone())
-                        .map_err(|e| anyhow!("Failed to decode hex payee pubkey: {e}"))?,
-                    incoming_amount_msat: params.payer_amount_msat as i64,
-                    outgoing_amount_msat: parsed_invoice
-                        .amount_msat
-                        .ok_or(anyhow!("Open channel invoice must have an amount"))?
-                        as i64,
-                    tag: json!({ "apiKeyHash": api_key_hash }).to_string(),
-                    opening_fee_params: Some(params.opening_fee_params.into()),
-                },
-            )
-            .await?;
+        let lsps2_server = true;
+        if !lsps2_server {
+            self.lsp
+                .register_payment(
+                    lsp_info.id.clone(),
+                    lsp_info.lsp_pubkey.clone(),
+                    grpc::PaymentInformation {
+                        payment_hash: hex::decode(parsed_invoice.payment_hash.clone())
+                            .map_err(|e| anyhow!("Failed to decode hex payment hash: {e}"))?,
+                        payment_secret: parsed_invoice.payment_secret.clone(),
+                        destination: hex::decode(parsed_invoice.payee_pubkey.clone())
+                            .map_err(|e| anyhow!("Failed to decode hex payee pubkey: {e}"))?,
+                        incoming_amount_msat: params.payer_amount_msat as i64,
+                        outgoing_amount_msat: parsed_invoice
+                            .amount_msat
+                            .ok_or(anyhow!("Open channel invoice must have an amount"))?
+                            as i64,
+                        tag: json!({ "apiKeyHash": api_key_hash }).to_string(),
+                        opening_fee_params: Some(params.opening_fee_params.into()),
+                    },
+                )
+                .await?;
+        }
         // Make sure we save the large amount so we can deduce the fees later.
         self.persister.insert_open_channel_payment_info(
             &parsed_invoice.payment_hash,

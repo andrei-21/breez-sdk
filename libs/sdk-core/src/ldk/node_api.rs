@@ -93,7 +93,7 @@ impl Ldk {
         bytes.copy_from_slice(seed);
         let seed = bytes;
         builder.set_entropy_seed_bytes(seed);
-		builder.set_log_facade_logger();
+        builder.set_log_facade_logger();
 
         let config = match network {
             crate::prelude::Network::Bitcoin => Config::mainnet(),
@@ -104,6 +104,10 @@ impl Ldk {
         builder.set_network(to_ldk_network(network));
         builder.set_chain_source_esplora(config.esplora_url, None);
         builder.set_gossip_source_rgs(config.rgs_url);
+
+        let lsps2 = PublicKey::from_str(config.lsps2_id).unwrap();
+        let address = SocketAddress::from_str(config.lsps2_address).unwrap();
+        builder.set_liquidity_source_lsps2(lsps2, address, None);
 
         let vss_client = VssClient::new(
             config.vss_url,
@@ -319,11 +323,17 @@ impl NodeAPI for Ldk {
             .write("preimages", "", &payment_hash.to_hex(), &preimage.0)
             .unwrap();
 
-        self.node
-            .bolt11_payment()
-            .receive_for_hash(request.amount_msat, &description, expiry, payment_hash)
-            .map(|i| i.to_string())
-            .map_err(to_node_error)
+        let payments = self.node.bolt11_payment();
+        let invoice = match request.payer_amount_msat {
+            Some(payer_amount_msat) => {
+                payments.receive_via_jit_channel(payer_amount_msat, &description, expiry, None)
+            }
+            None => {
+                payments.receive_for_hash(request.amount_msat, &description, expiry, payment_hash)
+            }
+        }
+        .map_err(to_node_error)?;
+        Ok(invoice.to_string())
     }
 
     async fn delete_invoice(&self, bolt11: String) -> NodeResult<()> {
